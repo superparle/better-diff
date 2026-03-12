@@ -1,0 +1,313 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Flower, Loader2, Monitor, PanelLeft, X, Menu, Plus } from "lucide-react"
+import { useLocation, useNavigate } from "react-router-dom"
+import { APP_NAME } from "../../shared/branding"
+import { NewProjectModal } from "../components/NewProjectModal"
+import { Button } from "../components/ui/button"
+import { cn } from "../lib/utils"
+import { ChatRow } from "../components/chat-ui/sidebar/ChatRow"
+import { LocalProjectsSection } from "../components/chat-ui/sidebar/LocalProjectsSection"
+import type { SidebarData, SidebarChatRow } from "../../shared/types"
+import type { SocketStatus } from "./socket"
+
+interface KannaSidebarProps {
+  data: SidebarData
+  activeChatId: string | null
+  connectionStatus: SocketStatus
+  ready: boolean
+  open: boolean
+  collapsed: boolean
+  showMobileOpenButton: boolean
+  onOpen: () => void
+  onClose: () => void
+  onCollapse: () => void
+  onExpand: () => void
+  onCreateChat: (projectId: string) => void
+  onCreateProject: (project: { mode: "new" | "existing"; localPath: string; title: string }) => void
+  onDeleteChat: (chat: SidebarChatRow) => void
+  onRemoveProject: (projectId: string) => void
+}
+
+export function KannaSidebar({
+  data,
+  activeChatId,
+  connectionStatus,
+  ready,
+  open,
+  collapsed,
+  showMobileOpenButton,
+  onOpen,
+  onClose,
+  onCollapse,
+  onExpand,
+  onCreateChat,
+  onCreateProject,
+  onDeleteChat,
+  onRemoveProject,
+}: KannaSidebarProps) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const chatsPerProject = 10
+
+  const projectIdByPath = useMemo(
+    () => new Map(data.projectGroups.map((group) => [group.localPath, group.groupKey])),
+    [data.projectGroups]
+  )
+
+  const activeVisibleCount = useMemo(
+    () => data.projectGroups.reduce((count, group) => count + group.chats.length, 0),
+    [data.projectGroups]
+  )
+
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
+
+  const toggleExpandedGroup = useCallback((key: string) => {
+    setExpandedGroups((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  const renderChatRow = useCallback((chat: SidebarChatRow) => (
+    <ChatRow
+      key={chat._id}
+      chat={chat}
+      activeChatId={activeChatId}
+      onSelectChat={(chatId) => navigate(`/chat/${chatId}`)}
+      onDeleteChat={() => onDeleteChat(chat)}
+    />
+  ), [activeChatId, navigate, onDeleteChat])
+
+  useEffect(() => {
+    if (!activeChatId || !scrollContainerRef.current) return
+
+    requestAnimationFrame(() => {
+      const container = scrollContainerRef.current
+      const activeElement = container?.querySelector(`[data-chat-id="${activeChatId}"]`) as HTMLElement | null
+      if (!activeElement || !container) return
+
+      const elementRect = activeElement.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+
+      if (elementRect.top < containerRect.top + 38) {
+        const relativeTop = elementRect.top - containerRect.top + container.scrollTop
+        container.scrollTo({ top: relativeTop - 38, behavior: "smooth" })
+      } else if (elementRect.bottom > containerRect.bottom) {
+        const elementCenter = elementRect.top + elementRect.height / 2 - containerRect.top + container.scrollTop
+        const containerCenter = container.clientHeight / 2
+        container.scrollTo({ top: elementCenter - containerCenter, behavior: "smooth" })
+      }
+    })
+  }, [activeChatId, activeVisibleCount])
+
+  const hasVisibleChats = activeVisibleCount > 0
+  const isLocalProjectsActive = location.pathname === "/projects"
+  const isConnecting = connectionStatus === "connecting" || !ready
+  const statusLabel = isConnecting ? "Connecting" : connectionStatus === "connected" ? "Connected" : "Disconnected"
+  const statusDotClass = connectionStatus === "connected" ? "bg-emerald-500" : "bg-amber-500"
+
+  return (
+    <>
+      {!open && showMobileOpenButton && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="fixed top-3 left-3 z-50 md:hidden"
+          onClick={onOpen}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+      )}
+
+      {collapsed && isLocalProjectsActive && (
+        <div className="hidden md:flex fixed left-0 top-0 h-full z-40 items-start pt-4 pl-5 border-l border-border/0">
+          <div className="flex items-center gap-1">
+            <Flower className="size-6 text-logo" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onExpand}
+              title="Expand sidebar"
+            >
+              <PanelLeft className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div
+        data-sidebar="open"
+        className={cn(
+          "fixed inset-0 z-50 bg-background dark:bg-card flex flex-col h-[100dvh] select-none",
+          "md:relative md:inset-auto md:w-[275px] md:mr-2 md:h-[calc(100dvh-16px)] md:my-2 md:ml-2 md:border md:border-border md:rounded-2xl",
+          open ? "flex" : "hidden md:flex",
+          collapsed && "md:hidden"
+        )}
+      >
+        <div className=" pl-3 pr-[7px] h-[64px] max-h-[64px] md:h-[55px] md:max-h-[55px] border-b flex items-center justify-between">
+          <div className="group/sidebar-header flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onCollapse}
+              title="Collapse sidebar"
+              className="hidden md:flex relative items-center justify-center h-5 w-5 sm:h-6 sm:w-6"
+            >
+              <Flower className="absolute inset-0.5 h-4 w-4 sm:h-5 sm:w-5 text-logo transition-all duration-200 ease-out opacity-100 scale-100 group-hover/sidebar-header:opacity-0 group-hover/sidebar-header:scale-0" />
+              <PanelLeft className="absolute inset-0 h-4 w-4 sm:h-6 sm:w-6 text-slate-500 dark:text-slate-400 transition-all duration-200 ease-out opacity-0 scale-0 group-hover/sidebar-header:opacity-100 group-hover/sidebar-header:scale-80 hover:opacity-50" />
+            </button>
+            <Flower className="h-5 w-5 sm:h-6 sm:w-6 text-logo md:hidden" />
+            <span className="font-logo text-base uppercase sm:text-md text-slate-600 dark:text-slate-100">{APP_NAME}</span>
+          </div>
+          <div className="flex items-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setNewProjectOpen(true)}
+              title="New project"
+            >
+              {/* <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                className="size-5"
+              >
+                <title>folder-plus</title>
+                <g
+                  fill="currentColor"
+                  strokeLinecap="square"
+                  strokeLinejoin="miter"
+                  strokeMiterlimit={10}
+                >
+                  <path
+                    d="M11 20H4C2.89543 20 2 19.1046 2 18V5C2 3.89543 2.89543 3 4 3H10L13 6H20C21.1046 6 22 6.89543 22 8V10"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    fill="none"
+                  />
+                  <path d="M19 22V14" stroke="currentColor" strokeWidth={2} fill="none" />
+                  <path d="M15 18H23" stroke="currentColor" strokeWidth={2} fill="none" />
+                </g>
+              </svg> */}
+              <Plus className="size-4"></Plus>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={onClose}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 min-h-0 overflow-y-auto scrollbar-hide"
+          style={{ WebkitOverflowScrolling: "touch" }}
+        >
+          <div className="pb-2 px-2 pt-1.5">
+            {!hasVisibleChats && isConnecting ? (
+              <div className="space-y-5 px-1 pt-3">
+                {[0, 1, 2].map((section) => (
+                  <div key={section} className="space-y-2 animate-pulse">
+                    <div className="h-4 w-28 rounded bg-muted" />
+                    <div className="space-y-1">
+                      {[0, 1, 2].map((row) => (
+                        <div key={row} className="flex items-center gap-2 rounded-md px-3 py-2">
+                          <div className="h-3.5 w-3.5 rounded-full bg-muted" />
+                          <div
+                            className={cn(
+                              "h-3.5 rounded bg-muted",
+                              row === 0 ? "w-32" : row === 1 ? "w-40" : "w-28"
+                            )}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {!hasVisibleChats && !isConnecting && data.projectGroups.length === 0 ? (
+              <p className="text-sm text-slate-400 p-2 mt-6 text-center">No conversations yet</p>
+            ) : null}
+
+            <LocalProjectsSection
+              projectGroups={data.projectGroups}
+              collapsedSections={collapsedSections}
+              expandedGroups={expandedGroups}
+              onToggleSection={toggleSection}
+              onToggleExpandedGroup={toggleExpandedGroup}
+              renderChatRow={renderChatRow}
+              chatsPerProject={chatsPerProject}
+              onNewLocalChat={(localPath) => {
+                const projectId = projectIdByPath.get(localPath)
+                if (projectId) {
+                  onCreateChat(projectId)
+                }
+              }}
+              onRemoveProject={onRemoveProject}
+              isConnected={connectionStatus === "connected"}
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-border p-2">
+          <button
+            type="button"
+            onClick={() => {
+              navigate("/projects")
+              onClose()
+            }}
+            className={cn(
+              "w-full rounded-xl rounded-t-md border px-3 py-2 text-left transition-colors",
+              isLocalProjectsActive
+                ? "bg-muted border-border"
+                : "border-border/0 hover:bg-muted hover:border-border active:bg-muted/80"
+            )}
+          >
+            <div className="flex items- justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Monitor className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Projects</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{statusLabel}</span>
+                {isConnecting ? (
+                  <Loader2 className="h-2 w-2 animate-spin" />
+                ) : (
+                  <span className={cn("h-2 w-2 rounded-full", statusDotClass)} />
+                )}
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <NewProjectModal
+        open={newProjectOpen}
+        onOpenChange={setNewProjectOpen}
+        onConfirm={onCreateProject}
+      />
+
+      {open ? <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={onClose} /> : null}
+    </>
+  )
+}
