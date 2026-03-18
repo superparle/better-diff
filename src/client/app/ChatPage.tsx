@@ -42,6 +42,7 @@ export function ChatPage() {
     rootRef: chatCardRef,
     fallbackRef: chatInputRef,
     enabled: state.hasSelectedProject && state.runtime?.status !== "waiting_for_user",
+    canCancel: state.canCancel,
   })
 
   useEffect(() => {

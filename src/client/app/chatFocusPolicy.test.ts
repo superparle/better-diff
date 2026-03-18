@@ -2,10 +2,15 @@ import { describe, expect, test } from "bun:test"
 import {
   ALLOW_FOCUS_RETAIN_ATTRIBUTE,
   CHAT_INPUT_ATTRIBUTE,
+  CHAT_SELECTION_ZONE_ATTRIBUTE,
   FOCUS_FALLBACK_IGNORE_ATTRIBUTE,
   focusNextChatInput,
+  hasActiveTextSelection,
   hasActiveFocusOverlay,
+  isChatInputTarget,
+  isSelectionZoneTarget,
   isTextEntryTarget,
+  shouldFocusChatInputOnEscape,
   shouldRestoreChatInputFocus,
 } from "./chatFocusPolicy"
 
@@ -61,17 +66,21 @@ function createTree() {
   const chat = new FakeElement("textarea", { parent: root })
   const button = new FakeElement("button", { parent: root, tabIndex: 0 })
   const random = new FakeElement("div", { parent: root })
+  const transcript = new FakeElement("div", { parent: root, attributes: { [CHAT_SELECTION_ZONE_ATTRIBUTE]: "" } })
+  const transcriptText = new FakeElement("div", { parent: transcript })
   const otherInput = new FakeElement("input", { parent: root })
   const custom = new FakeElement("div", { parent: root, attributes: { [ALLOW_FOCUS_RETAIN_ATTRIBUTE]: "" } })
   const overlay = new FakeElement("div", { attributes: { [FOCUS_FALLBACK_IGNORE_ATTRIBUTE]: "", "data-state": "open" } })
 
   return {
     root: {
-      contains: (other: Node | null) => [chat, button, random, otherInput, custom].includes(other as unknown as FakeElement),
+      contains: (other: Node | null) => [chat, button, random, transcript, transcriptText, otherInput, custom].includes(other as unknown as FakeElement),
     },
     chat: chat as unknown as HTMLTextAreaElement,
     button: button as unknown as Element,
     random: random as unknown as Element,
+    transcript: transcript as unknown as Element,
+    transcriptText: transcriptText as unknown as Element,
     otherInput: otherInput as unknown as Element,
     custom: custom as unknown as Element,
     overlay,
@@ -126,15 +135,39 @@ describe("chatFocusPolicy", () => {
     expect(isTextEntryTarget(random)).toBe(false)
   })
 
+  test("detects transcript selection zone targets", () => {
+    const { transcriptText, random } = createTree()
+
+    expect(isSelectionZoneTarget(transcriptText)).toBe(true)
+    expect(isSelectionZoneTarget(random)).toBe(false)
+  })
+
+  test("detects chat input targets", () => {
+    const { chat, random } = createTree()
+
+    ;(chat as unknown as FakeElement).attributes.set(CHAT_INPUT_ATTRIBUTE, "")
+
+    expect(isChatInputTarget(chat)).toBe(true)
+    expect(isChatInputTarget(random)).toBe(false)
+  })
+
+  test("detects active text selections", () => {
+    expect(hasActiveTextSelection({ isCollapsed: false, toString: () => "selected text" } as Selection)).toBe(true)
+    expect(hasActiveTextSelection({ isCollapsed: true, toString: () => "selected text" } as Selection)).toBe(false)
+    expect(hasActiveTextSelection({ isCollapsed: false, toString: () => "   " } as Selection)).toBe(false)
+  })
+
   test("restores chat input after clicking a random non-focusable area", () => {
     const { root, chat, random } = createTree()
 
     expect(shouldRestoreChatInputFocus({
       activeElement: null,
-      pointerTarget: random,
+      pointerStartTarget: random,
+      pointerEndTarget: random,
       root,
       fallback: chat,
       hasActiveOverlay: false,
+      hasActiveSelection: false,
     })).toBe(true)
   })
 
@@ -143,10 +176,12 @@ describe("chatFocusPolicy", () => {
 
     expect(shouldRestoreChatInputFocus({
       activeElement: button,
-      pointerTarget: button,
+      pointerStartTarget: button,
+      pointerEndTarget: button,
       root,
       fallback: chat,
       hasActiveOverlay: false,
+      hasActiveSelection: false,
     })).toBe(true)
   })
 
@@ -155,10 +190,26 @@ describe("chatFocusPolicy", () => {
 
     expect(shouldRestoreChatInputFocus({
       activeElement: otherInput,
-      pointerTarget: random,
+      pointerStartTarget: random,
+      pointerEndTarget: random,
       root,
       fallback: chat,
       hasActiveOverlay: false,
+      hasActiveSelection: false,
+    })).toBe(false)
+  })
+
+  test("does not restore when transcript text is being selected", () => {
+    const { root, chat, transcriptText } = createTree()
+
+    expect(shouldRestoreChatInputFocus({
+      activeElement: null,
+      pointerStartTarget: transcriptText,
+      pointerEndTarget: transcriptText,
+      root,
+      fallback: chat,
+      hasActiveOverlay: false,
+      hasActiveSelection: true,
     })).toBe(false)
   })
 
@@ -172,10 +223,61 @@ describe("chatFocusPolicy", () => {
     expect(hasActiveFocusOverlay(document)).toBe(true)
     expect(shouldRestoreChatInputFocus({
       activeElement: null,
-      pointerTarget: random,
+      pointerStartTarget: random,
+      pointerEndTarget: random,
       root,
       fallback: chat,
       hasActiveOverlay: hasActiveFocusOverlay(document),
+      hasActiveSelection: false,
+    })).toBe(false)
+  })
+
+  test("focuses chat input on escape when composer is unfocused and idle", () => {
+    const { chat, random } = createTree()
+
+    expect(shouldFocusChatInputOnEscape({
+      activeElement: random,
+      fallback: chat,
+      hasActiveOverlay: false,
+      canCancel: false,
+      defaultPrevented: false,
+    })).toBe(true)
+  })
+
+  test("does not focus chat input on escape when composer is already focused", () => {
+    const { chat } = createTree()
+    ;(chat as unknown as FakeElement).attributes.set(CHAT_INPUT_ATTRIBUTE, "")
+
+    expect(shouldFocusChatInputOnEscape({
+      activeElement: chat,
+      fallback: chat,
+      hasActiveOverlay: false,
+      canCancel: false,
+      defaultPrevented: false,
+    })).toBe(false)
+  })
+
+  test("does not focus chat input on escape while a turn is cancelable", () => {
+    const { chat, random } = createTree()
+
+    expect(shouldFocusChatInputOnEscape({
+      activeElement: random,
+      fallback: chat,
+      hasActiveOverlay: false,
+      canCancel: true,
+      defaultPrevented: false,
+    })).toBe(false)
+  })
+
+  test("does not focus chat input on escape when an overlay is open", () => {
+    const { chat, random } = createTree()
+
+    expect(shouldFocusChatInputOnEscape({
+      activeElement: random,
+      fallback: chat,
+      hasActiveOverlay: true,
+      canCancel: false,
+      defaultPrevented: false,
     })).toBe(false)
   })
 })

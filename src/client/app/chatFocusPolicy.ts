@@ -2,6 +2,7 @@ export const FOCUS_FALLBACK_IGNORE_ATTRIBUTE = "data-focus-fallback-ignore"
 export const ALLOW_FOCUS_RETAIN_ATTRIBUTE = "data-allow-focus-retain"
 export const RESTORE_CHAT_INPUT_FOCUS_EVENT = "kanna:restore-chat-input-focus"
 export const CHAT_INPUT_ATTRIBUTE = "data-chat-input"
+export const CHAT_SELECTION_ZONE_ATTRIBUTE = "data-chat-selection-zone"
 
 type ElementLike = {
   closest?: (selector: string) => Element | null
@@ -43,6 +44,19 @@ export function hasActiveFocusOverlay(document: Document): boolean {
   return Boolean(document.querySelector(`[${FOCUS_FALLBACK_IGNORE_ATTRIBUTE}][data-state='open']`))
 }
 
+export function isChatInputTarget(element: Element | null): boolean {
+  return hasAttributeInTree(element, CHAT_INPUT_ATTRIBUTE)
+}
+
+export function isSelectionZoneTarget(element: Element | null): boolean {
+  return hasAttributeInTree(element, CHAT_SELECTION_ZONE_ATTRIBUTE)
+}
+
+export function hasActiveTextSelection(selection: Selection | null | undefined): boolean {
+  if (!selection) return false
+  return !selection.isCollapsed && selection.toString().trim().length > 0
+}
+
 export function focusNextChatInput(current: HTMLTextAreaElement | null, document: Document) {
   if (!current) return false
 
@@ -60,22 +74,49 @@ export function focusNextChatInput(current: HTMLTextAreaElement | null, document
   return true
 }
 
+export function shouldFocusChatInputOnEscape(args: {
+  activeElement: Element | null
+  fallback: HTMLTextAreaElement | null
+  hasActiveOverlay: boolean
+  canCancel: boolean
+  defaultPrevented: boolean
+}): boolean {
+  const { activeElement, fallback, hasActiveOverlay, canCancel, defaultPrevented } = args
+
+  if (defaultPrevented) return false
+  if (!fallback || fallback.disabled) return false
+  if (hasActiveOverlay) return false
+  if (activeElement === fallback) return false
+  if (isChatInputTarget(activeElement)) return false
+  if (canCancel) return false
+  return true
+}
+
 export function shouldRestoreChatInputFocus(args: {
   activeElement: Element | null
-  pointerTarget: Element | null
+  pointerStartTarget: Element | null
+  pointerEndTarget: Element | null
   root: RootLike | null
   fallback: { disabled?: boolean } | null
   hasActiveOverlay: boolean
+  hasActiveSelection: boolean
 }): boolean {
-  const { activeElement, pointerTarget, root, fallback, hasActiveOverlay } = args
+  const { activeElement, pointerStartTarget, pointerEndTarget, root, fallback, hasActiveOverlay, hasActiveSelection } = args
+  const interactionTarget = pointerEndTarget ?? pointerStartTarget
 
   if (!root || !fallback || fallback.disabled) return false
-  if (!pointerTarget || !root.contains(pointerTarget)) return false
-  if (hasAttributeInTree(pointerTarget, FOCUS_FALLBACK_IGNORE_ATTRIBUTE)) return false
+  if (!interactionTarget || !root.contains(interactionTarget)) return false
+  if (hasAttributeInTree(interactionTarget, FOCUS_FALLBACK_IGNORE_ATTRIBUTE)) return false
   if (hasActiveOverlay) return false
   if (activeElement === fallback) return false
   if (hasAttributeInTree(activeElement, FOCUS_FALLBACK_IGNORE_ATTRIBUTE)) return false
+  if (
+    hasActiveSelection
+    && (isSelectionZoneTarget(pointerStartTarget) || isSelectionZoneTarget(interactionTarget))
+  ) {
+    return false
+  }
   if (isTextEntryTarget(activeElement)) return false
-  if (activeElement && activeElement === pointerTarget) return true
+  if (activeElement && activeElement === interactionTarget) return true
   return !isFocusableTarget(activeElement)
 }

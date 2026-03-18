@@ -10,6 +10,9 @@ const DEFAULT_ROWS = 24
 const DEFAULT_SCROLLBACK = 1_000
 const MIN_SCROLLBACK = 500
 const MAX_SCROLLBACK = 5_000
+const FOCUS_IN_SEQUENCE = "\x1b[I"
+const FOCUS_OUT_SEQUENCE = "\x1b[O"
+const MODE_SEQUENCE_TAIL_LENGTH = 16
 
 interface CreateTerminalArgs {
   projectPath: string
@@ -33,6 +36,8 @@ interface TerminalSession {
   terminal: Bun.Terminal
   headless: Terminal
   serializeAddon: SerializeAddon
+  focusReportingEnabled: boolean
+  modeSequenceTail: string
 }
 
 function clampScrollback(value: number) {
@@ -76,6 +81,25 @@ function createTerminalEnv() {
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
   }
+}
+
+function updateFocusReportingState(session: Pick<TerminalSession, "focusReportingEnabled" | "modeSequenceTail">, chunk: string) {
+  const combined = session.modeSequenceTail + chunk
+  const regex = /\x1b\[\?1004([hl])/g
+
+  for (const match of combined.matchAll(regex)) {
+    session.focusReportingEnabled = match[1] === "h"
+  }
+
+  session.modeSequenceTail = combined.slice(-MODE_SEQUENCE_TAIL_LENGTH)
+}
+
+function filterFocusReportInput(data: string, allowFocusReporting: boolean) {
+  if (allowFocusReporting || (!data.includes(FOCUS_IN_SEQUENCE) && !data.includes(FOCUS_OUT_SEQUENCE))) {
+    return data
+  }
+
+  return data.replaceAll(FOCUS_IN_SEQUENCE, "").replaceAll(FOCUS_OUT_SEQUENCE, "")
 }
 
 function killTerminalProcessTree(subprocess: Bun.Subprocess | null) {
@@ -179,6 +203,7 @@ export class TerminalManager {
         name: "xterm-256color",
         data: (_terminal, data) => {
           const chunk = Buffer.from(data).toString("utf8")
+          updateFocusReportingState(session, chunk)
           headless.write(chunk)
           this.emit({
             type: "terminal.output",
@@ -189,6 +214,8 @@ export class TerminalManager {
       }),
       headless,
       serializeAddon,
+      focusReportingEnabled: false,
+      modeSequenceTail: "",
     }
 
     try {
@@ -203,7 +230,6 @@ export class TerminalManager {
       session.headless.dispose()
       throw error
     }
-
     void session.process.exited.then((exitCode) => {
       const active = this.sessions.get(args.terminalId)
       if (!active) return
@@ -244,18 +270,21 @@ export class TerminalManager {
     const session = this.sessions.get(terminalId)
     if (!session || session.status === "exited") return
 
+    const filteredData = filterFocusReportInput(data, session.focusReportingEnabled)
+    if (!filteredData) return
+
     let cursor = 0
 
-    while (cursor < data.length) {
-      const ctrlCIndex = data.indexOf("\x03", cursor)
+    while (cursor < filteredData.length) {
+      const ctrlCIndex = filteredData.indexOf("\x03", cursor)
 
       if (ctrlCIndex === -1) {
-        session.terminal.write(data.slice(cursor))
+        session.terminal.write(filteredData.slice(cursor))
         return
       }
 
       if (ctrlCIndex > cursor) {
-        session.terminal.write(data.slice(cursor, ctrlCIndex))
+        session.terminal.write(filteredData.slice(cursor, ctrlCIndex))
       }
 
       signalTerminalProcessGroup(session.process, "SIGINT")

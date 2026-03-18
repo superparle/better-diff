@@ -16,6 +16,7 @@ import { CompactBoundaryMessage, ContextClearedMessage } from "../components/mes
 import { CompactSummaryMessage } from "../components/messages/CompactSummaryMessage"
 import { StatusMessage } from "../components/messages/StatusMessage"
 import { CollapsedToolGroup } from "../components/messages/CollapsedToolGroup"
+import { CHAT_SELECTION_ZONE_ATTRIBUTE } from "./chatFocusPolicy"
 
 const SPECIAL_TOOL_NAMES = new Set(["AskUserQuestion", "ExitPlanMode", "TodoWrite"])
 
@@ -158,7 +159,11 @@ export function KannaTranscript({
       {renderItems.map((item) => {
         if (item.type === "tool-group") {
           return (
-            <div key={`group-${item.startIndex}`} className="group relative">
+            <div
+              key={`group-${item.startIndex}`}
+              className="group relative"
+              {...{ [CHAT_SELECTION_ZONE_ATTRIBUTE]: "" }}
+            >
               <CollapsedToolGroup messages={item.messages} isLoading={isLoading} localPath={localPath} />
             </div>
           )
@@ -167,7 +172,12 @@ export function KannaTranscript({
         const rendered = renderMessage(item.message, item.index)
         if (!rendered) return null
         return (
-          <div key={item.message.id} id={`msg-${item.message.id}`} className="group relative">
+          <div
+            key={item.message.id}
+            id={`msg-${item.message.id}`}
+            className="group relative"
+            {...{ [CHAT_SELECTION_ZONE_ATTRIBUTE]: "" }}
+          >
             {rendered}
           </div>
         )
