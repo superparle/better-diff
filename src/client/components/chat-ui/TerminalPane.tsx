@@ -19,7 +19,7 @@ interface Props {
 const TERMINAL_THEME_LIGHT: ITheme = {
   foreground: "#0f172a",
   background: "transparent",
-  cursor: "rgba(15,23,42,0.5)",
+  cursor: "#000000",
   cursorAccent: "#ffffff",
   selectionBackground: "rgba(221,228,236,0.55)",
   selectionInactiveBackground: "rgba(221,228,236,0.38)",
@@ -44,8 +44,8 @@ const TERMINAL_THEME_LIGHT: ITheme = {
 const TERMINAL_THEME_DARK: ITheme = {
   foreground: "#f8fafc",
   background: "transparent",
-  cursor: "rgba(248,250,252,0.5)",
-  cursorAccent: "#0f172a",
+  cursor: "#ffffff",
+  cursorAccent: "#000000",
   selectionBackground: "rgba(248,250,252,0.28)",
   selectionInactiveBackground: "rgba(248,250,252,0.18)",
   black: "#0f172a",
@@ -185,6 +185,7 @@ export function TerminalPane({
       cursorBlink: true,
       cursorStyle: "bar",
       cursorWidth: 1,
+      lineHeight: 1.1,
       convertEol: false,
       allowTransparency: true,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
