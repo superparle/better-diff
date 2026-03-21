@@ -6,7 +6,6 @@ import type { AgentCoordinator } from "./agent"
 import type { DiscoveredProject } from "./discovery"
 import { EventStore } from "./event-store"
 import { openExternal } from "./external-open"
-import { FileTreeManager } from "./file-tree-manager"
 import { KeybindingsManager } from "./keybindings"
 import { ensureProjectDirectory } from "./paths"
 import { TerminalManager } from "./terminal-manager"
@@ -21,7 +20,6 @@ interface CreateWsRouterArgs {
   agent: AgentCoordinator
   terminals: TerminalManager
   keybindings: KeybindingsManager
-  fileTree: FileTreeManager
   refreshDiscovery: () => Promise<DiscoveredProject[]>
   getDiscoveredProjects: () => DiscoveredProject[]
   machineDisplayName: string
@@ -36,7 +34,6 @@ export function createWsRouter({
   agent,
   terminals,
   keybindings,
-  fileTree,
   refreshDiscovery,
   getDiscoveredProjects,
   machineDisplayName,
@@ -95,18 +92,6 @@ export function createWsRouter({
       }
     }
 
-    if (topic.type === "file-tree") {
-      return {
-        v: PROTOCOL_VERSION,
-        type: "snapshot",
-        id,
-        snapshot: {
-          type: "file-tree",
-          data: fileTree.getSnapshot(topic.projectId),
-        },
-      }
-    }
-
     return {
       v: PROTOCOL_VERSION,
       type: "snapshot",
@@ -155,20 +140,6 @@ export function createWsRouter({
 
   const disposeTerminalEvents = terminals.onEvent((event) => {
     pushTerminalEvent(event.terminalId, event)
-  })
-
-  const disposeFileTreeEvents = fileTree.onInvalidate((event) => {
-    for (const ws of sockets) {
-      for (const [id, topic] of ws.data.subscriptions.entries()) {
-        if (topic.type !== "file-tree" || topic.projectId !== event.projectId) continue
-        send(ws, {
-          v: PROTOCOL_VERSION,
-          type: "event",
-          id,
-          event,
-        })
-      }
-    }
   })
 
   const disposeKeybindingEvents = keybindings.onChange(() => {
@@ -290,11 +261,6 @@ export function createWsRouter({
           pushTerminalSnapshot(command.terminalId)
           return
         }
-        case "file-tree.readDirectory": {
-          const result = await fileTree.readDirectory(command)
-          send(ws, { v: PROTOCOL_VERSION, type: "ack", id, result })
-          return
-        }
       }
 
       broadcastSnapshots()
@@ -309,11 +275,6 @@ export function createWsRouter({
       sockets.add(ws)
     },
     handleClose(ws: ServerWebSocket<ClientState>) {
-      for (const topic of ws.data.subscriptions.values()) {
-        if (topic.type === "file-tree") {
-          fileTree.unsubscribe(topic.projectId)
-        }
-      }
       sockets.delete(ws)
     },
     broadcastSnapshots,
@@ -333,9 +294,6 @@ export function createWsRouter({
 
       if (parsed.type === "subscribe") {
         ws.data.subscriptions.set(parsed.id, parsed.topic)
-        if (parsed.topic.type === "file-tree") {
-          fileTree.subscribe(parsed.topic.projectId)
-        }
         if (parsed.topic.type === "local-projects") {
           void refreshDiscovery().then(() => {
             if (ws.data.subscriptions.has(parsed.id)) {
@@ -348,11 +306,7 @@ export function createWsRouter({
       }
 
       if (parsed.type === "unsubscribe") {
-        const topic = ws.data.subscriptions.get(parsed.id)
         ws.data.subscriptions.delete(parsed.id)
-        if (topic?.type === "file-tree") {
-          fileTree.unsubscribe(topic.projectId)
-        }
         send(ws, { v: PROTOCOL_VERSION, type: "ack", id: parsed.id })
         return
       }
@@ -361,7 +315,6 @@ export function createWsRouter({
     },
     dispose() {
       disposeTerminalEvents()
-      disposeFileTreeEvents()
       disposeKeybindingEvents()
     },
   }

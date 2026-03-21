@@ -1,8 +1,6 @@
 import type {
   AgentProvider,
   ChatSnapshot,
-  FileTreeDirectoryPage,
-  FileTreeSnapshot,
   KeybindingsSnapshot,
   LocalProjectsSnapshot,
   ModelOptions,
@@ -20,7 +18,6 @@ export type SubscriptionTopic =
   | { type: "sidebar" }
   | { type: "local-projects" }
   | { type: "keybindings" }
-  | { type: "file-tree"; projectId: string }
   | { type: "chat"; chatId: string }
   | { type: "terminal"; terminalId: string }
 
@@ -77,13 +74,6 @@ export type ClientCommand =
   | { type: "terminal.input"; terminalId: string; data: string }
   | { type: "terminal.resize"; terminalId: string; cols: number; rows: number }
   | { type: "terminal.close"; terminalId: string }
-  | {
-      type: "file-tree.readDirectory"
-      projectId: string
-      directoryPath: string
-      cursor?: string
-      limit?: number
-    }
 
 export type ClientEnvelope =
   | { v: 1; type: "subscribe"; id: string; topic: SubscriptionTopic }
@@ -94,23 +84,14 @@ export type ServerSnapshot =
   | { type: "sidebar"; data: SidebarData }
   | { type: "local-projects"; data: LocalProjectsSnapshot }
   | { type: "keybindings"; data: KeybindingsSnapshot }
-  | { type: "file-tree"; data: FileTreeSnapshot }
   | { type: "chat"; data: ChatSnapshot | null }
   | { type: "terminal"; data: TerminalSnapshot | null }
 
-export type FileTreeEvent = {
-  type: "file-tree.invalidate"
-  projectId: string
-  directoryPaths: string[]
-}
-
 export type ServerEnvelope =
   | { v: 1; type: "snapshot"; id: string; snapshot: ServerSnapshot }
-  | { v: 1; type: "event"; id: string; event: TerminalEvent | FileTreeEvent }
+  | { v: 1; type: "event"; id: string; event: TerminalEvent }
   | { v: 1; type: "ack"; id: string; result?: unknown }
   | { v: 1; type: "error"; id?: string; message: string }
-
-export type FileTreeReadDirectoryResult = FileTreeDirectoryPage
 
 export function isClientEnvelope(value: unknown): value is ClientEnvelope {
   if (!value || typeof value !== "object") return false

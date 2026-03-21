@@ -167,30 +167,6 @@ export interface LocalProjectsSnapshot {
   projects: LocalProjectSummary[]
 }
 
-export type FileTreeEntryKind = "file" | "directory" | "symlink"
-
-export interface FileTreeEntry {
-  name: string
-  relativePath: string
-  kind: FileTreeEntryKind
-  extension?: string
-}
-
-export interface FileTreeDirectoryPage {
-  directoryPath: string
-  entries: FileTreeEntry[]
-  nextCursor: string | null
-  hasMore: boolean
-  error?: string
-}
-
-export interface FileTreeSnapshot {
-  projectId: string
-  rootPath: string
-  pageSize: number
-  supportsRealtime: true
-}
-
 export type KeybindingAction =
   | "toggleEmbeddedTerminal"
   | "toggleRightSidebar"

@@ -28,10 +28,6 @@ describe("ws-router", () => {
         getSnapshot: () => ({ bindings: { toggleEmbeddedTerminal: ["cmd+j", "ctrl+`"], toggleRightSidebar: ["ctrl+b"], openInFinder: ["cmd+alt+f"], openInEditor: ["cmd+shift+o"], addSplitTerminal: ["cmd+shift+j"] }, warning: null }),
         onChange: () => () => {},
       } as never,
-      fileTree: {
-        getSnapshot: () => ({ projectId: "project-1", rootPath: "/tmp/project-1", pageSize: 200, supportsRealtime: true }),
-        onInvalidate: () => () => {},
-      } as never,
       refreshDiscovery: async () => [],
       getDiscoveredProjects: () => [],
       machineDisplayName: "Local Machine",
@@ -71,10 +67,6 @@ describe("ws-router", () => {
         getSnapshot: () => ({ bindings: { toggleEmbeddedTerminal: ["cmd+j", "ctrl+`"], toggleRightSidebar: ["ctrl+b"], openInFinder: ["cmd+alt+f"], openInEditor: ["cmd+shift+o"], addSplitTerminal: ["cmd+shift+j"] }, warning: null }),
         onChange: () => () => {},
       } as never,
-      fileTree: {
-        getSnapshot: () => ({ projectId: "project-1", rootPath: "/tmp/project-1", pageSize: 200, supportsRealtime: true }),
-        onInvalidate: () => () => {},
-      } as never,
       refreshDiscovery: async () => [],
       getDiscoveredProjects: () => [],
       machineDisplayName: "Local Machine",
@@ -105,31 +97,7 @@ describe("ws-router", () => {
     ])
   })
 
-  test("subscribes and unsubscribes file-tree topics and acks directory reads", async () => {
-    const fileTree = {
-      subscribeCalls: [] as string[],
-      unsubscribeCalls: [] as string[],
-      subscribe(projectId: string) {
-        this.subscribeCalls.push(projectId)
-      },
-      unsubscribe(projectId: string) {
-        this.unsubscribeCalls.push(projectId)
-      },
-      getSnapshot: (projectId: string) => ({
-        projectId,
-        rootPath: "/tmp/project-1",
-        pageSize: 200,
-        supportsRealtime: true as const,
-      }),
-      readDirectory: async () => ({
-        directoryPath: "",
-        entries: [],
-        nextCursor: null,
-        hasMore: false,
-      }),
-      onInvalidate: () => () => {},
-    }
-
+  test("subscribes and unsubscribes chat topics", () => {
     const router = createWsRouter({
       store: { state: createEmptyState() } as never,
       agent: { getActiveStatuses: () => new Map() } as never,
@@ -141,7 +109,6 @@ describe("ws-router", () => {
         getSnapshot: () => ({ bindings: { toggleEmbeddedTerminal: ["cmd+j", "ctrl+`"], toggleRightSidebar: ["ctrl+b"], openInFinder: ["cmd+alt+f"], openInEditor: ["cmd+shift+o"], addSplitTerminal: ["cmd+shift+j"] }, warning: null }),
         onChange: () => () => {},
       } as never,
-      fileTree: fileTree as never,
       refreshDiscovery: async () => [],
       getDiscoveredProjects: () => [],
       machineDisplayName: "Local Machine",
@@ -153,51 +120,18 @@ describe("ws-router", () => {
       JSON.stringify({
         v: 1,
         type: "subscribe",
-        id: "tree-sub-1",
-        topic: { type: "file-tree", projectId: "project-1" },
+        id: "chat-sub-1",
+        topic: { type: "chat", chatId: "chat-1" },
       })
     )
 
-    expect(fileTree.subscribeCalls).toEqual(["project-1"])
     expect(ws.sent[0]).toEqual({
       v: PROTOCOL_VERSION,
       type: "snapshot",
-      id: "tree-sub-1",
+      id: "chat-sub-1",
       snapshot: {
-        type: "file-tree",
-        data: {
-          projectId: "project-1",
-          rootPath: "/tmp/project-1",
-          pageSize: 200,
-          supportsRealtime: true,
-        },
-      },
-    })
-
-    router.handleMessage(
-      ws as never,
-      JSON.stringify({
-        v: 1,
-        type: "command",
-        id: "tree-read-1",
-        command: {
-          type: "file-tree.readDirectory",
-          projectId: "project-1",
-          directoryPath: "",
-        },
-      })
-    )
-
-    await Promise.resolve()
-    expect(ws.sent[1]).toEqual({
-      v: PROTOCOL_VERSION,
-      type: "ack",
-      id: "tree-read-1",
-      result: {
-        directoryPath: "",
-        entries: [],
-        nextCursor: null,
-        hasMore: false,
+        type: "chat",
+        data: null,
       },
     })
 
@@ -206,15 +140,14 @@ describe("ws-router", () => {
       JSON.stringify({
         v: 1,
         type: "unsubscribe",
-        id: "tree-sub-1",
+        id: "chat-sub-1",
       })
     )
 
-    expect(fileTree.unsubscribeCalls).toEqual(["project-1"])
-    expect(ws.sent[2]).toEqual({
+    expect(ws.sent[1]).toEqual({
       v: PROTOCOL_VERSION,
       type: "ack",
-      id: "tree-sub-1",
+      id: "chat-sub-1",
     })
   })
 
@@ -249,10 +182,6 @@ describe("ws-router", () => {
         onEvent: () => () => {},
       } as never,
       keybindings: keybindings as never,
-      fileTree: {
-        getSnapshot: () => ({ projectId: "project-1", rootPath: "/tmp/project-1", pageSize: 200, supportsRealtime: true }),
-        onInvalidate: () => () => {},
-      } as never,
       refreshDiscovery: async () => [],
       getDiscoveredProjects: () => [],
       machineDisplayName: "Local Machine",

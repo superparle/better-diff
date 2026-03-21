@@ -3,7 +3,6 @@ import { APP_NAME } from "../shared/branding"
 import { EventStore } from "./event-store"
 import { AgentCoordinator } from "./agent"
 import { discoverProjects, type DiscoveredProject } from "./discovery"
-import { FileTreeManager } from "./file-tree-manager"
 import { KeybindingsManager } from "./keybindings"
 import { getMachineDisplayName } from "./machine-name"
 import { TerminalManager } from "./terminal-manager"
@@ -34,9 +33,6 @@ export async function startKannaServer(options: StartKannaServerOptions = {}) {
   const terminals = new TerminalManager()
   const keybindings = new KeybindingsManager()
   await keybindings.initialize()
-  const fileTree = new FileTreeManager({
-    getProject: (projectId) => store.getProject(projectId),
-  })
   const agent = new AgentCoordinator({
     store,
     onStateChange: () => {
@@ -48,7 +44,6 @@ export async function startKannaServer(options: StartKannaServerOptions = {}) {
     agent,
     terminals,
     keybindings,
-    fileTree,
     refreshDiscovery,
     getDiscoveredProjects: () => discoveredProjects,
     machineDisplayName,
@@ -110,7 +105,6 @@ export async function startKannaServer(options: StartKannaServerOptions = {}) {
       await agent.cancel(chatId)
     }
     router.dispose()
-    fileTree.dispose()
     keybindings.dispose()
     terminals.closeAll()
     await store.compact()

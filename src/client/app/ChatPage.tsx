@@ -477,11 +477,6 @@ export function ChatPage() {
               } as CSSProperties}
             >
               <RightSidebar
-                projectId={projectId}
-                isVisible={showRightSidebar}
-                socket={state.socket}
-                onOpenFile={state.handleOpenLocalLink}
-                onOpenInFinder={(path) => state.handleOpenExternalPath("open_finder", path)}
                 onClose={() => toggleRightSidebar(projectId)}
               />
             </div>
