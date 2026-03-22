@@ -259,6 +259,7 @@ export function useKannaState(activeChatId: string | null): KannaState {
 
   async function handleCreateChat(projectId: string) {
     try {
+      useChatPreferencesStore.getState().initializeComposerForNewChat()
       const result = await socket.command<{ chatId: string }>({ type: "chat.create", projectId })
       setSelectedProjectId(projectId)
       setPendingChatId(result.chatId)
@@ -274,6 +275,7 @@ export function useKannaState(activeChatId: string | null): KannaState {
       setStartingLocalPath(localPath)
       const result = await socket.command<{ projectId: string }>({ type: "project.open", localPath })
       setSelectedProjectId(result.projectId)
+      useChatPreferencesStore.getState().initializeComposerForNewChat()
       const chat = await socket.command<{ chatId: string }>({ type: "chat.create", projectId: result.projectId })
       setPendingChatId(chat.chatId)
       navigate(`/chat/${chat.chatId}`)
@@ -295,6 +297,7 @@ export function useKannaState(activeChatId: string | null): KannaState {
           : { type: "project.open", localPath: project.localPath }
       )
       setSelectedProjectId(result.projectId)
+      useChatPreferencesStore.getState().initializeComposerForNewChat()
       const chat = await socket.command<{ chatId: string }>({ type: "chat.create", projectId: result.projectId })
       setPendingChatId(chat.chatId)
       navigate(`/chat/${chat.chatId}`)
@@ -495,7 +498,7 @@ export function useKannaState(activeChatId: string | null): KannaState {
   async function handleExitPlanMode(toolUseId: string, confirmed: boolean, clearContext?: boolean, message?: string) {
     if (!activeChatId) return
     if (confirmed) {
-      useChatPreferencesStore.getState().setPlanMode(false)
+      useChatPreferencesStore.getState().setComposerPlanMode(false)
     }
     try {
       await socket.command({
