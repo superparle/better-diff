@@ -6,6 +6,7 @@ function getAllowedHosts() {
   const defaults = ["localhost", "127.0.0.1", "0.0.0.0"]
   const configured = process.env.KANNA_DEV_ALLOWED_HOSTS
   if (!configured) return defaults
+  if (configured === "true") return true
 
   try {
     const parsed = JSON.parse(configured)

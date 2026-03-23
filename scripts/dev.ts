@@ -11,12 +11,14 @@ const localHostname = getHostname()
 
 function getDevHostConfig(args: string[]) {
   let backendTargetHost = "127.0.0.1"
+  let allowAllHosts = false
   const hosts = new Set<string>(["localhost", "127.0.0.1", "0.0.0.0", localHostname])
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === "--remote") {
       backendTargetHost = "127.0.0.1"
+      allowAllHosts = true
       continue
     }
     if (arg !== "--host") continue
@@ -29,7 +31,7 @@ function getDevHostConfig(args: string[]) {
   }
 
   return {
-    allowedHosts: [...hosts],
+    allowedHosts: allowAllHosts ? true : [...hosts],
     backendTargetHost,
   }
 }
@@ -38,7 +40,9 @@ const devHostConfig = getDevHostConfig(forwardedArgs)
 
 const clientEnv = {
   ...process.env,
-  KANNA_DEV_ALLOWED_HOSTS: JSON.stringify(devHostConfig.allowedHosts),
+  KANNA_DEV_ALLOWED_HOSTS: typeof devHostConfig.allowedHosts === "boolean"
+    ? String(devHostConfig.allowedHosts)
+    : JSON.stringify(devHostConfig.allowedHosts),
   KANNA_DEV_BACKEND_TARGET_HOST: devHostConfig.backendTargetHost,
 }
 
