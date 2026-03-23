@@ -1,19 +1,14 @@
-import type { UpdateSnapshot } from "../shared/types"
+import type { UpdateInstallResult, UpdateSnapshot } from "../shared/types"
 import { PACKAGE_NAME } from "../shared/branding"
-import { compareVersions } from "./cli-runtime"
+import { compareVersions, type UpdateInstallAttemptResult } from "./cli-runtime"
 
 const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000
 
 export interface UpdateManagerDeps {
   currentVersion: string
   fetchLatestVersion: (packageName: string) => Promise<string>
-  installVersion: (packageName: string, version: string) => boolean
+  installVersion: (packageName: string, version: string) => UpdateInstallAttemptResult
   devMode?: boolean
-}
-
-export interface UpdateInstallResult {
-  ok: boolean
-  action: "restart" | "reload"
 }
 
 export class UpdateManager {
@@ -100,6 +95,9 @@ export class UpdateManager {
       return {
         ok: true,
         action: "restart",
+        errorCode: null,
+        userTitle: null,
+        userMessage: null,
       }
     }
 
@@ -107,6 +105,9 @@ export class UpdateManager {
       return {
         ok: this.snapshot.updateAvailable,
         action: "restart",
+        errorCode: null,
+        userTitle: null,
+        userMessage: null,
       }
     }
 
@@ -159,6 +160,9 @@ export class UpdateManager {
         return {
           ok: false,
           action: "restart",
+          errorCode: null,
+          userTitle: null,
+          userMessage: null,
         }
       }
     }
@@ -179,19 +183,25 @@ export class UpdateManager {
       return {
         ok: false,
         action: "restart",
+        errorCode: "install_failed",
+        userTitle: "Update failed",
+        userMessage: "Kanna could not determine which version to install.",
       }
     }
 
     const installed = this.deps.installVersion(PACKAGE_NAME, targetVersion)
-    if (!installed) {
+    if (!installed.ok) {
       this.setSnapshot({
         ...this.snapshot,
         status: "error",
-        error: "Unable to install the latest version.",
+        error: installed.userMessage ?? "Unable to install the latest version.",
       })
       return {
         ok: false,
         action: "restart",
+        errorCode: installed.errorCode,
+        userTitle: installed.userTitle,
+        userMessage: installed.userMessage,
       }
     }
 
@@ -205,6 +215,9 @@ export class UpdateManager {
     return {
       ok: true,
       action: "restart",
+      errorCode: null,
+      userTitle: null,
+      userMessage: null,
     }
   }
 

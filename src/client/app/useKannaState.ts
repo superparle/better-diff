@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { useNavigate } from "react-router-dom"
 import { APP_NAME } from "../../shared/branding"
-import { PROVIDERS, type AgentProvider, type AskUserQuestionAnswerMap, type KeybindingsSnapshot, type ModelOptions, type ProviderCatalogEntry, type UpdateSnapshot } from "../../shared/types"
+import { PROVIDERS, type AgentProvider, type AskUserQuestionAnswerMap, type KeybindingsSnapshot, type ModelOptions, type ProviderCatalogEntry, type UpdateInstallResult, type UpdateSnapshot } from "../../shared/types"
 import { useChatPreferencesStore } from "../stores/chatPreferencesStore"
 import { useRightSidebarStore } from "../stores/rightSidebarStore"
 import { useTerminalLayoutStore } from "../stores/terminalLayoutStore"
@@ -56,6 +56,19 @@ export function shouldPinTranscriptToBottom(distanceFromBottom: number) {
 }
 
 const FIXED_TRANSCRIPT_PADDING_BOTTOM = 320
+const UI_UPDATE_RESTART_STORAGE_KEY = "kanna:ui-update-restart"
+
+function getUiUpdateRestartPhase() {
+  return window.sessionStorage.getItem(UI_UPDATE_RESTART_STORAGE_KEY)
+}
+
+function setUiUpdateRestartPhase(phase: "awaiting_disconnect" | "awaiting_reconnect") {
+  window.sessionStorage.setItem(UI_UPDATE_RESTART_STORAGE_KEY, phase)
+}
+
+function clearUiUpdateRestartPhase() {
+  window.sessionStorage.removeItem(UI_UPDATE_RESTART_STORAGE_KEY)
+}
 
 export interface ProjectRequest {
   mode: "new" | "existing"
@@ -217,6 +230,21 @@ export function useKannaState(activeChatId: string | null): KannaState {
       setCommandError(error instanceof Error ? error.message : String(error))
     })
   }, [connectionStatus, socket])
+
+  useEffect(() => {
+    const phase = getUiUpdateRestartPhase()
+    if (!phase) return
+
+    if (phase === "awaiting_disconnect" && connectionStatus === "disconnected") {
+      setUiUpdateRestartPhase("awaiting_reconnect")
+      return
+    }
+
+    if (phase === "awaiting_reconnect" && connectionStatus === "connected") {
+      clearUiUpdateRestartPhase()
+      window.location.reload()
+    }
+  }, [connectionStatus])
 
   useEffect(() => {
     function handleWindowFocus() {
@@ -435,13 +463,29 @@ export function useKannaState(activeChatId: string | null): KannaState {
 
   async function handleInstallUpdate() {
     try {
-      const result = await socket.command<{ ok: boolean; action: "restart" | "reload" }>({ type: "update.install" })
+      const result = await socket.command<UpdateInstallResult>({ type: "update.install" })
+      if (!result.ok) {
+        clearUiUpdateRestartPhase()
+        setCommandError(null)
+        await dialog.alert({
+          title: result.userTitle ?? "Update failed",
+          description: result.userMessage ?? "Kanna could not install the update. Try again later.",
+          closeLabel: "OK",
+        })
+        return
+      }
+
       if (result.ok && result.action === "reload") {
         window.location.reload()
         return
       }
+
+      if (result.ok && result.action === "restart") {
+        setUiUpdateRestartPhase("awaiting_disconnect")
+      }
       setCommandError(null)
     } catch (error) {
+      clearUiUpdateRestartPhase()
       setCommandError(error instanceof Error ? error.message : String(error))
     }
   }

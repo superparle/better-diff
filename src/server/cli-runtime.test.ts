@@ -1,13 +1,20 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { compareVersions, parseArgs, runCli } from "./cli-runtime"
+import { compareVersions, classifyInstallVersionFailure, parseArgs, runCli } from "./cli-runtime"
+import { CLI_SUPPRESS_OPEN_ONCE_ENV_VAR } from "./restart"
 
 const originalRuntimeProfile = process.env.KANNA_RUNTIME_PROFILE
+const originalSuppressOpen = process.env[CLI_SUPPRESS_OPEN_ONCE_ENV_VAR]
 
 afterEach(() => {
   if (originalRuntimeProfile === undefined) {
     delete process.env.KANNA_RUNTIME_PROFILE
   } else {
     process.env.KANNA_RUNTIME_PROFILE = originalRuntimeProfile
+  }
+  if (originalSuppressOpen === undefined) {
+    delete process.env[CLI_SUPPRESS_OPEN_ONCE_ENV_VAR]
+  } else {
+    process.env[CLI_SUPPRESS_OPEN_ONCE_ENV_VAR] = originalSuppressOpen
   }
 })
 
@@ -46,7 +53,12 @@ function createDeps(overrides: Partial<Parameters<typeof runCli>[1]> = {}) {
     },
     installVersion: (packageName, version) => {
       calls.installVersion.push({ packageName, version })
-      return true
+      return {
+        ok: true,
+        errorCode: null,
+        userTitle: null,
+        userMessage: null,
+      }
     },
     openUrl: (url) => {
       calls.openUrl.push(url)
@@ -97,6 +109,17 @@ describe("compareVersions", () => {
     expect(compareVersions("0.3.0", "0.3.0")).toBe(0)
     expect(compareVersions("0.3.0", "0.3.1")).toBe(-1)
     expect(compareVersions("1.0.0", "0.9.9")).toBe(1)
+  })
+})
+
+describe("classifyInstallVersionFailure", () => {
+  test("maps version propagation failures to a user-facing retry message", () => {
+    expect(classifyInstallVersionFailure('error: No version matching "0.13.3" found for specifier "kanna-code"')).toEqual({
+      ok: false,
+      errorCode: "version_not_live_yet",
+      userTitle: "Update not live yet",
+      userMessage: "This update is still propagating. Try again in a few minutes.",
+    })
   })
 })
 
@@ -164,6 +187,15 @@ describe("runCli", () => {
     expect(calls.openUrl).toEqual(["http://localhost:4000"])
   })
 
+  test("suppresses browser open for a ui-triggered restarted child", async () => {
+    process.env[CLI_SUPPRESS_OPEN_ONCE_ENV_VAR] = "1"
+    const { calls, deps } = createDeps()
+
+    await runCli(["--port", "4000"], deps)
+
+    expect(calls.openUrl).toEqual([])
+  })
+
   test("returns restarting when a newer version is available", async () => {
     const { calls, deps } = createDeps({
       fetchLatestVersion: async (packageName) => {
@@ -174,7 +206,7 @@ describe("runCli", () => {
 
     const result = await runCli(["--port", "4000", "--no-open"], deps)
 
-    expect(result).toEqual({ kind: "restarting" })
+    expect(result).toEqual({ kind: "restarting", reason: "startup_update" })
     expect(calls.installVersion).toEqual([{ packageName: "kanna-code", version: "0.4.0" }])
     expect(calls.startServer).toEqual([])
   })
@@ -187,7 +219,12 @@ describe("runCli", () => {
       },
       installVersion: (packageName, version) => {
         calls.installVersion.push({ packageName, version })
-        return false
+        return {
+          ok: false,
+          errorCode: "install_failed",
+          userTitle: "Update failed",
+          userMessage: "Kanna could not install the update. Try again later.",
+        }
       },
     })
 

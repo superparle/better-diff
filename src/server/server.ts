@@ -7,6 +7,7 @@ import { KeybindingsManager } from "./keybindings"
 import { getMachineDisplayName } from "./machine-name"
 import { TerminalManager } from "./terminal-manager"
 import { UpdateManager } from "./update-manager"
+import type { UpdateInstallAttemptResult } from "./cli-runtime"
 import { createWsRouter, type ClientState } from "./ws-router"
 
 export interface StartKannaServerOptions {
@@ -15,7 +16,7 @@ export interface StartKannaServerOptions {
   update?: {
     version: string
     fetchLatestVersion: (packageName: string) => Promise<string>
-    installVersion: (packageName: string, version: string) => boolean
+    installVersion: (packageName: string, version: string) => UpdateInstallAttemptResult
   }
 }
 

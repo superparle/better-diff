@@ -186,6 +186,19 @@ export interface UpdateSnapshot {
   installAction: "restart" | "reload"
 }
 
+export type UpdateInstallErrorCode =
+  | "version_not_live_yet"
+  | "install_failed"
+  | "command_missing"
+
+export interface UpdateInstallResult {
+  ok: boolean
+  action: "restart" | "reload"
+  errorCode: UpdateInstallErrorCode | null
+  userTitle: string | null
+  userMessage: string | null
+}
+
 export type KeybindingAction =
   | "toggleEmbeddedTerminal"
   | "toggleRightSidebar"

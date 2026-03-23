@@ -11,15 +11,19 @@ import {
   RefreshCw,
   Settings2,
   Sun,
+  Rocket,
+  Download,
+  CloudDownload,
 } from "lucide-react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { useNavigate, useOutletContext, useParams } from "react-router-dom"
 import { getKeybindingsFilePathDisplay, SDK_CLIENT_APP } from "../../shared/branding"
-import { DEFAULT_KEYBINDINGS, PROVIDERS, type AgentProvider, type KeybindingAction } from "../../shared/types"
+import { DEFAULT_KEYBINDINGS, PROVIDERS, type AgentProvider, type KeybindingAction, type UpdateSnapshot } from "../../shared/types"
 import { markdownComponents } from "../components/messages/shared"
 import { ChatPreferenceControls } from "../components/chat-ui/ChatPreferenceControls"
 import { buttonVariants } from "../components/ui/button"
+import { SettingsHeaderButton } from "../components/ui/settings-header-button"
 import type { EditorPreset } from "../../shared/protocol"
 import { SegmentedControl } from "../components/ui/segmented-control"
 import {
@@ -121,6 +125,28 @@ const KEYBINDING_ACTIONS = Object.keys(KEYBINDING_ACTION_LABELS) as KeybindingAc
 
 export function getKeybindingsSubtitle(filePathDisplay: string) {
   return `Edit global app shortcuts stored in ${filePathDisplay}.`
+}
+
+export function getGeneralHeaderAction(updateSnapshot: UpdateSnapshot | null) {
+  const isChecking = updateSnapshot?.status === "checking"
+  const isUpdating = updateSnapshot?.status === "updating" || updateSnapshot?.status === "restart_pending"
+
+  if (updateSnapshot?.updateAvailable) {
+    return {
+      disabled: isUpdating,
+      kind: "update" as const,
+      label: "Update",
+      variant: "default" as const,
+    }
+  }
+
+  return {
+    disabled: isChecking || isUpdating,
+    kind: "check" as const,
+    label: "Check for updates",
+    spinning: isChecking,
+    variant: "outline" as const,
+  }
 }
 
 export function resetSettingsPageChangelogCache() {
@@ -374,6 +400,7 @@ export function SettingsPage() {
   const [keybindingDrafts, setKeybindingDrafts] = useState<Record<string, string>>({})
   const [keybindingsError, setKeybindingsError] = useState<string | null>(null)
   const updateSnapshot = state.updateSnapshot
+  const generalHeaderAction = getGeneralHeaderAction(updateSnapshot)
   const updateStatusLabel = updateSnapshot?.status === "checking"
     ? "Checking for updates…"
     : updateSnapshot?.status === "updating"
@@ -570,56 +597,40 @@ export function SettingsPage() {
             ) : (
               <div className="mx-auto max-w-4xl">
                 <div className="pb-6">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center justify-between gap-4 min-h-[34px]">
                     <div className="text-lg font-semibold tracking-[-0.2px] text-foreground">
                       {selectedSection.label}
                     </div>
                     {selectedPage === "keybindings" ? (
-                      <button
-                        type="button"
+                      <SettingsHeaderButton
                         onClick={() => {
                           void state.handleOpenExternalPath("open_editor", keybindingsFilePathDisplay)
                         }}
-                        className={cn(
-                          buttonVariants({ variant: "outline", size: "sm" }),
-                          "gap-2 rounded-lg"
-                        )}
+                        icon={<Code className="h-4 w-4" />}
                       >
-                        <Code className="h-4 w-4" />
-                        <span>Open in {state.editorLabel}</span>
-                      </button>
+                        Open in {state.editorLabel}
+                      </SettingsHeaderButton>
                     ) : null}
                     {selectedPage === "general" ? (
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
+                        <SettingsHeaderButton
+                          variant={generalHeaderAction.variant}
                           onClick={() => {
+                            if (generalHeaderAction.kind === "update") {
+                              void state.handleInstallUpdate()
+                              return
+                            }
                             void state.handleCheckForUpdates({ force: true })
                           }}
-                          disabled={updateSnapshot?.status === "checking" || updateSnapshot?.status === "updating"}
-                          className={cn(
-                            buttonVariants({ variant: "outline", size: "sm" }),
-                            "gap-2 rounded-lg"
-                          )}
+                          disabled={generalHeaderAction.disabled}
+                          icon={generalHeaderAction.kind === "check"
+                            ? <RefreshCw className={cn("size-3.5", generalHeaderAction.spinning && "animate-spin")} />
+                            : generalHeaderAction.kind === "update"
+                            ? <CloudDownload className={cn("size-3.5")} />
+                            : undefined}
                         >
-                          <RefreshCw className={`h-4 w-4 ${updateSnapshot?.status === "checking" ? "animate-spin" : ""}`} />
-                          <span>Check for updates</span>
-                        </button>
-                        {updateSnapshot?.updateAvailable ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void state.handleInstallUpdate()
-                            }}
-                            disabled={updateSnapshot.status === "updating" || updateSnapshot.status === "restart_pending"}
-                            className={cn(
-                              buttonVariants({ variant: "default", size: "sm" }),
-                              "rounded-lg"
-                            )}
-                          >
-                            Update now
-                          </button>
-                        ) : null}
+                          {generalHeaderAction.label}
+                        </SettingsHeaderButton>
                       </div>
                     ) : null}
                   </div>
@@ -878,6 +889,7 @@ export function SettingsPage() {
                         <SettingsRow
                           key={action}
                           title={KEYBINDING_ACTION_LABELS[action]}
+
                           description={(
                             <>
                               <span>Comma-separated shortcuts.</span>
@@ -898,7 +910,7 @@ export function SettingsPage() {
                             </>
                           )}
                           bordered={index !== 0}
-                          alignStart
+
                         >
                           <div className="flex min-w-0 max-w-[420px] flex-1 flex-col items-stretch gap-2">
                             <input

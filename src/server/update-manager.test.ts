@@ -6,7 +6,12 @@ describe("UpdateManager", () => {
     const manager = new UpdateManager({
       currentVersion: "0.12.0",
       fetchLatestVersion: async () => "0.13.0",
-      installVersion: () => true,
+      installVersion: () => ({
+        ok: true,
+        errorCode: null,
+        userTitle: null,
+        userMessage: null,
+      }),
     })
 
     const snapshot = await manager.checkForUpdates({ force: true })
@@ -25,7 +30,12 @@ describe("UpdateManager", () => {
         calls += 1
         return calls === 1 ? "0.12.1" : "0.13.0"
       },
-      installVersion: () => true,
+      installVersion: () => ({
+        ok: true,
+        errorCode: null,
+        userTitle: null,
+        userMessage: null,
+      }),
     })
 
     await manager.checkForUpdates()
@@ -42,13 +52,24 @@ describe("UpdateManager", () => {
       fetchLatestVersion: async () => "0.13.0",
       installVersion: (_packageName, version) => {
         installedVersion = version
-        return false
+        return {
+          ok: false,
+          errorCode: "version_not_live_yet",
+          userTitle: "Update not live yet",
+          userMessage: "This update is still propagating. Try again in a few minutes.",
+        }
       },
     })
 
     const result = await manager.installUpdate()
 
-    expect(result).toEqual({ ok: false, action: "restart" })
+    expect(result).toEqual({
+      ok: false,
+      action: "restart",
+      errorCode: "version_not_live_yet",
+      userTitle: "Update not live yet",
+      userMessage: "This update is still propagating. Try again in a few minutes.",
+    })
     expect(installedVersion === "0.13.0").toBe(true)
     expect(manager.getSnapshot().status).toBe("error")
     expect(manager.getSnapshot().currentVersion).toBe("0.12.0")
@@ -58,7 +79,12 @@ describe("UpdateManager", () => {
     const manager = new UpdateManager({
       currentVersion: "0.12.0",
       fetchLatestVersion: async () => "9.9.9",
-      installVersion: () => true,
+      installVersion: () => ({
+        ok: true,
+        errorCode: null,
+        userTitle: null,
+        userMessage: null,
+      }),
       devMode: true,
     })
 
@@ -69,7 +95,13 @@ describe("UpdateManager", () => {
     })
 
     const result = await manager.installUpdate()
-    expect(result).toEqual({ ok: true, action: "restart" })
+    expect(result).toEqual({
+      ok: true,
+      action: "restart",
+      errorCode: null,
+      userTitle: null,
+      userMessage: null,
+    })
     expect(manager.getSnapshot().status).toBe("restart_pending")
   })
 })

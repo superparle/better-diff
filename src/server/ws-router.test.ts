@@ -281,7 +281,13 @@ describe("ws-router", () => {
         return this.snapshot
       },
       async installUpdate() {
-        return true
+        return {
+          ok: false,
+          action: "restart",
+          errorCode: "version_not_live_yet",
+          userTitle: "Update not live yet",
+          userMessage: "This update is still propagating. Try again in a few minutes.",
+        }
       },
     }
 
@@ -349,6 +355,32 @@ describe("ws-router", () => {
         lastCheckedAt: 123,
         error: null,
         installAction: "restart",
+      },
+    })
+
+    router.handleMessage(
+      ws as never,
+      JSON.stringify({
+        v: 1,
+        type: "command",
+        id: "update-install-1",
+        command: {
+          type: "update.install",
+        },
+      })
+    )
+
+    await Promise.resolve()
+    expect(ws.sent[2]).toEqual({
+      v: PROTOCOL_VERSION,
+      type: "ack",
+      id: "update-install-1",
+      result: {
+        ok: false,
+        action: "restart",
+        errorCode: "version_not_live_yet",
+        userTitle: "Update not live yet",
+        userMessage: "This update is still propagating. Try again in a few minutes.",
       },
     })
   })
