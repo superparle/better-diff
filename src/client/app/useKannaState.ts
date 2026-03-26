@@ -223,6 +223,8 @@ export function useKannaState(activeChatId: string | null): KannaState {
   const inputRef = useRef<HTMLDivElement>(null)
   const autoFollowTranscriptRef = useRef(true)
   const initialScrollCompletedRef = useRef(false)
+  const initialScrollFrameRef = useRef<number | null>(null)
+  const initialScrollTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => socket.onStatus(setConnectionStatus), [socket])
 
@@ -351,8 +353,27 @@ export function useKannaState(activeChatId: string | null): KannaState {
   useEffect(() => {
     autoFollowTranscriptRef.current = true
     initialScrollCompletedRef.current = false
+    if (initialScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(initialScrollFrameRef.current)
+      initialScrollFrameRef.current = null
+    }
+    if (initialScrollTimeoutRef.current !== null) {
+      window.clearTimeout(initialScrollTimeoutRef.current)
+      initialScrollTimeoutRef.current = null
+    }
     setIsAtBottom(true)
   }, [activeChatId])
+
+  useEffect(() => {
+    return () => {
+      if (initialScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(initialScrollFrameRef.current)
+      }
+      if (initialScrollTimeoutRef.current !== null) {
+        window.clearTimeout(initialScrollTimeoutRef.current)
+      }
+    }
+  }, [])
 
   useLayoutEffect(() => {
     const element = inputRef.current
@@ -407,7 +428,27 @@ export function useKannaState(activeChatId: string | null): KannaState {
     if (!element) return
     if (activeChatId && !runtime) return
 
-    element.scrollTo({ top: element.scrollHeight, behavior: "auto" })
+    const scrollToLatestMessage = () => {
+      const currentElement = scrollRef.current
+      if (!currentElement) return
+      currentElement.scrollTo({ top: currentElement.scrollHeight, behavior: "auto" })
+    }
+
+    scrollToLatestMessage()
+    if (initialScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(initialScrollFrameRef.current)
+    }
+    initialScrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollToLatestMessage()
+      initialScrollFrameRef.current = null
+    })
+    if (initialScrollTimeoutRef.current !== null) {
+      window.clearTimeout(initialScrollTimeoutRef.current)
+    }
+    initialScrollTimeoutRef.current = window.setTimeout(() => {
+      scrollToLatestMessage()
+      initialScrollTimeoutRef.current = null
+    }, 60)
     initialScrollCompletedRef.current = true
   }, [activeChatId, inputHeight, messages.length, runtime])
 
