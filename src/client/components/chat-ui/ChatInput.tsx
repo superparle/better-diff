@@ -31,6 +31,21 @@ interface Props {
   availableProviders: ProviderCatalogEntry[]
 }
 
+function withNormalizedContextWindow(
+  state: ComposerState,
+  model: string
+): ComposerState {
+  if (state.provider !== "claude") return { ...state, model }
+  return {
+    ...state,
+    model,
+    modelOptions: {
+      ...state.modelOptions,
+      contextWindow: normalizeClaudeContextWindow(model, state.modelOptions.contextWindow),
+    },
+  }
+}
+
 function logChatInput(message: string, details?: unknown) {
   if (details === undefined) {
     console.info(`[ChatInput] ${message}`)
@@ -231,13 +246,10 @@ const ChatInputInner = forwardRef<HTMLTextAreaElement, Props>(function ChatInput
       setLockedComposerState((current) => {
         const next = current ?? createLockedComposerState(selectedProvider, composerState, providerDefaults)
         if (next.provider !== "claude") return next
-        return {
-          ...next,
-          modelOptions: {
-            ...next.modelOptions,
-            contextWindow: normalizeClaudeContextWindow(next.model, contextWindow),
-          },
-        }
+        return withNormalizedContextWindow(
+          { ...next, modelOptions: { ...next.modelOptions, contextWindow } },
+          next.model
+        )
       })
       return
     }
@@ -385,18 +397,7 @@ const ChatInputInner = forwardRef<HTMLTextAreaElement, Props>(function ChatInput
               if (providerLocked) {
                 setLockedComposerState((current) => {
                   const next = current ?? createLockedComposerState(selectedProvider, composerState, providerDefaults)
-                  if (next.provider === "claude") {
-                    return {
-                      ...next,
-                      model,
-                      modelOptions: {
-                        ...next.modelOptions,
-                        contextWindow: normalizeClaudeContextWindow(model, next.modelOptions.contextWindow),
-                      },
-                    }
-                  }
-
-                  return { ...next, model }
+                  return withNormalizedContextWindow(next, model)
                 })
                 return
               }
