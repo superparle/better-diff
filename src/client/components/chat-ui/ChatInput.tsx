@@ -31,6 +31,21 @@ interface Props {
   availableProviders: ProviderCatalogEntry[]
 }
 
+function withNormalizedContextWindow(
+  state: ComposerState,
+  model: string
+): ComposerState {
+  if (state.provider !== "claude") return { ...state, model }
+  return {
+    ...state,
+    model,
+    modelOptions: {
+      ...state.modelOptions,
+      contextWindow: normalizeClaudeContextWindow(model, state.modelOptions.contextWindow),
+    },
+  }
+}
+
 function logChatInput(message: string, details?: unknown) {
   if (details === undefined) {
     console.info(`[ChatInput] ${message}`)
@@ -199,52 +214,42 @@ const ChatInputInner = forwardRef<HTMLTextAreaElement, Props>(function ChatInput
     })
   }, [activeProvider, chatId, composerState.model, composerState.provider, lockedComposerState?.provider, providerLocked, providerPrefs.model, providerPrefs.provider, selectedProvider])
 
-  function setReasoningEffort(reasoningEffort: string) {
+  function updateLockedOrComposer(
+    transform: (state: ComposerState) => ComposerState,
+    fallback: () => void
+  ) {
     if (providerLocked) {
       setLockedComposerState((current) => {
         const next = current ?? createLockedComposerState(selectedProvider, composerState, providerDefaults)
-        if (next.provider === "claude") {
-          return {
-            ...next,
-            modelOptions: { ...next.modelOptions, reasoningEffort: reasoningEffort as ClaudeReasoningEffort },
-          }
-        }
-
-        return {
-          ...next,
-          modelOptions: { ...next.modelOptions, reasoningEffort: reasoningEffort as CodexReasoningEffort },
-        }
+        return transform(next)
       })
       return
     }
+    fallback()
+  }
 
-    if (selectedProvider === "claude") {
-      setComposerModelOptions({ reasoningEffort: reasoningEffort as ClaudeReasoningEffort })
-      return
-    }
-
-    setComposerModelOptions({ reasoningEffort: reasoningEffort as CodexReasoningEffort })
+  function setReasoningEffort(reasoningEffort: string) {
+    updateLockedOrComposer(
+      (state) => ({
+        ...state,
+        modelOptions: { ...state.modelOptions, reasoningEffort: reasoningEffort as ClaudeReasoningEffort & CodexReasoningEffort },
+      } as ComposerState),
+      () => selectedProvider === "claude"
+        ? setComposerModelOptions({ reasoningEffort: reasoningEffort as ClaudeReasoningEffort })
+        : setComposerModelOptions({ reasoningEffort: reasoningEffort as CodexReasoningEffort })
+    )
   }
 
   function setClaudeContextWindow(contextWindow: ClaudeContextWindow) {
-    if (providerLocked) {
-      setLockedComposerState((current) => {
-        const next = current ?? createLockedComposerState(selectedProvider, composerState, providerDefaults)
-        if (next.provider !== "claude") return next
-        const normalizedContextWindow = normalizeClaudeContextWindow(next.model, contextWindow)
-        const { contextWindow: _unusedContextWindow, ...restModelOptions } = next.modelOptions
-        return {
-          ...next,
-          modelOptions: {
-            ...restModelOptions,
-            ...(normalizedContextWindow ? { contextWindow: normalizedContextWindow } : {}),
-          },
-        }
-      })
-      return
-    }
-
-    setComposerModelOptions({ contextWindow })
+    updateLockedOrComposer(
+      (state) => state.provider !== "claude"
+        ? state
+        : withNormalizedContextWindow(
+            { ...state, modelOptions: { ...state.modelOptions, contextWindow } },
+            state.model
+          ),
+      () => setComposerModelOptions({ contextWindow })
+    )
   }
 
   function setEffectivePlanMode(planMode: boolean) {
@@ -384,46 +389,31 @@ const ChatInputInner = forwardRef<HTMLTextAreaElement, Props>(function ChatInput
               resetComposerFromProvider(provider)
             }}
             onModelChange={(_, model) => {
-              if (providerLocked) {
-                setLockedComposerState((current) => {
-                  const next = current ?? createLockedComposerState(selectedProvider, composerState, providerDefaults)
-                  if (next.provider === "claude") {
-                    const normalizedContextWindow = normalizeClaudeContextWindow(model, next.modelOptions.contextWindow)
-                    const { contextWindow: _unusedContextWindow, ...restModelOptions } = next.modelOptions
-                    return {
-                      ...next,
-                      model,
-                      modelOptions: {
-                        ...restModelOptions,
-                        ...(normalizedContextWindow ? { contextWindow: normalizedContextWindow } : {}),
-                      },
-                    }
-                  }
-
-                  return { ...next, model }
-                })
-                return
-              }
-
-              setComposerModel(model)
+              updateLockedOrComposer(
+                (state) => withNormalizedContextWindow(state, model),
+                () => setComposerModel(model)
+              )
             }}
-            onClaudeReasoningEffortChange={(effort) => setReasoningEffort(effort)}
-            onClaudeContextWindowChange={(contextWindow) => setClaudeContextWindow(contextWindow)}
-            onCodexReasoningEffortChange={(effort) => setReasoningEffort(effort)}
-            onCodexFastModeChange={(fastMode) => {
-              if (providerLocked) {
-                setLockedComposerState((current) => {
-                  const next = current ?? createLockedComposerState(selectedProvider, composerState, providerDefaults)
-                  if (next.provider === "claude") return next
-                  return {
-                    ...next,
-                    modelOptions: { ...next.modelOptions, fastMode },
-                  }
-                })
-                return
+            onModelOptionChange={(change) => {
+              switch (change.type) {
+                case "claudeReasoningEffort":
+                  setReasoningEffort(change.effort)
+                  break
+                case "codexReasoningEffort":
+                  setReasoningEffort(change.effort)
+                  break
+                case "contextWindow":
+                  setClaudeContextWindow(change.contextWindow)
+                  break
+                case "fastMode":
+                  updateLockedOrComposer(
+                    (state) => state.provider === "claude"
+                      ? state
+                      : { ...state, modelOptions: { ...state.modelOptions, fastMode: change.fastMode } },
+                    () => setComposerModelOptions({ fastMode: change.fastMode })
+                  )
+                  break
               }
-
-              setComposerModelOptions({ fastMode })
             }}
             planMode={providerPrefs.planMode}
             onPlanModeChange={setEffectivePlanMode}

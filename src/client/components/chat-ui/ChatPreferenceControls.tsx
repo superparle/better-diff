@@ -1,5 +1,5 @@
 import { useState, type ComponentType, type SVGProps } from "react"
-import { Box, Brain, Gauge, ListTodo, LockOpen, Sparkles, SquareMenu, SquareMinus } from "lucide-react"
+import { Box, Brain, Gauge, ListTodo, LockOpen, SquareMenu, SquareMinus } from "lucide-react"
 import {
   CLAUDE_CONTEXT_WINDOW_OPTIONS,
   CLAUDE_REASONING_OPTIONS,
@@ -48,15 +48,6 @@ function OpenAIIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
 export const PROVIDER_ICONS: Record<AgentProvider, IconComponent> = {
   claude: AnthropicIcon,
   codex: OpenAIIcon,
-}
-
-export const MODEL_ICON_BY_ID: Record<string, typeof Box> = {
-  opus: Box,
-  sonnet: Box,
-  haiku: Box,
-  "gpt-5.4": Box,
-  "gpt-5.3-codex": Box,
-  "gpt-5.3-codex-spark": Box,
 }
 
 export function PopoverMenuItem({
@@ -140,6 +131,12 @@ export function InputPopover({
   )
 }
 
+export type ModelOptionChange =
+  | { type: "claudeReasoningEffort"; effort: ClaudeReasoningEffort }
+  | { type: "contextWindow"; contextWindow: ClaudeContextWindow }
+  | { type: "codexReasoningEffort"; effort: CodexReasoningEffort }
+  | { type: "fastMode"; fastMode: boolean }
+
 interface ChatPreferenceControlsProps {
   availableProviders: ProviderCatalogEntry[]
   selectedProvider: AgentProvider
@@ -149,10 +146,7 @@ interface ChatPreferenceControlsProps {
   modelOptions: ClaudeModelOptions | CodexModelOptions
   onProviderChange?: (provider: AgentProvider) => void
   onModelChange: (provider: AgentProvider, model: string) => void
-  onClaudeReasoningEffortChange: (effort: ClaudeReasoningEffort) => void
-  onClaudeContextWindowChange: (contextWindow: ClaudeContextWindow) => void
-  onCodexReasoningEffortChange: (effort: CodexReasoningEffort) => void
-  onCodexFastModeChange: (fastMode: boolean) => void
+  onModelOptionChange: (change: ModelOptionChange) => void
   planMode?: boolean
   onPlanModeChange?: (planMode: boolean) => void
   includePlanMode?: boolean
@@ -168,10 +162,7 @@ export function ChatPreferenceControls({
   modelOptions,
   onProviderChange,
   onModelChange,
-  onClaudeReasoningEffortChange,
-  onClaudeContextWindowChange,
-  onCodexReasoningEffortChange,
-  onCodexFastModeChange,
+  onModelOptionChange,
   planMode = false,
   onPlanModeChange,
   includePlanMode = true,
@@ -179,7 +170,7 @@ export function ChatPreferenceControls({
 }: ChatPreferenceControlsProps) {
   const providerConfig = availableProviders.find((provider) => provider.id === selectedProvider) ?? availableProviders[0]
   const ProviderIcon = PROVIDER_ICONS[selectedProvider]
-  const ModelIcon = MODEL_ICON_BY_ID[model] ?? Box
+  const ModelIcon = Box
   const showPlanMode = includePlanMode && providerConfig?.supportsPlanMode && onPlanModeChange
   const claudeModelOptions = selectedProvider === "claude" ? modelOptions as ClaudeModelOptions : null
   const codexModelOptions = selectedProvider === "codex" ? modelOptions as CodexModelOptions : null
@@ -226,7 +217,7 @@ export function ChatPreferenceControls({
         )}
       >
         {(close) => providerConfig.models.map((candidate) => {
-          const Icon = MODEL_ICON_BY_ID[candidate.id] ?? Sparkles
+          const Icon = Box
           return (
             <PopoverMenuItem
               key={candidate.id}
@@ -260,7 +251,7 @@ export function ChatPreferenceControls({
               <PopoverMenuItem
                 key={effort.id}
                 onClick={() => {
-                  onClaudeReasoningEffortChange(effort.id)
+                  onModelOptionChange({ type: "claudeReasoningEffort", effort: effort.id })
                   close()
                 }}
                 selected={modelOptions.reasoningEffort === effort.id}
@@ -273,7 +264,7 @@ export function ChatPreferenceControls({
               <PopoverMenuItem
                 key={effort.id}
                 onClick={() => {
-                  onCodexReasoningEffortChange(effort.id)
+                  onModelOptionChange({ type: "codexReasoningEffort", effort: effort.id })
                   close()
                 }}
                 selected={modelOptions.reasoningEffort === effort.id}
@@ -297,7 +288,7 @@ export function ChatPreferenceControls({
             <PopoverMenuItem
               key={option.id}
                 onClick={() => {
-                  onClaudeContextWindowChange(option.id)
+                  onModelOptionChange({ type: "contextWindow", contextWindow: option.id })
                   close()
                 }}
                 selected={selectedContextWindow === option.id}
@@ -327,7 +318,7 @@ export function ChatPreferenceControls({
             <>
               <PopoverMenuItem
                 onClick={() => {
-                  onCodexFastModeChange(false)
+                  onModelOptionChange({ type: "fastMode", fastMode: false })
                   close()
                 }}
                 selected={!codexModelOptions?.fastMode}
@@ -336,7 +327,7 @@ export function ChatPreferenceControls({
               />
               <PopoverMenuItem
                 onClick={() => {
-                  onCodexFastModeChange(true)
+                  onModelOptionChange({ type: "fastMode", fastMode: true })
                   close()
                 }}
                 selected={Boolean(codexModelOptions?.fastMode)}
