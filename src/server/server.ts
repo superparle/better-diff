@@ -1,5 +1,7 @@
 import path from "node:path"
+import { stat } from "node:fs/promises"
 import { APP_NAME, getRuntimeProfile } from "../shared/branding"
+import type { ChatAttachment } from "../shared/types"
 import { EventStore } from "./event-store"
 import { AgentCoordinator } from "./agent"
 import { discoverProjects, type DiscoveredProject } from "./discovery"
@@ -9,6 +11,45 @@ import { TerminalManager } from "./terminal-manager"
 import { UpdateManager } from "./update-manager"
 import type { UpdateInstallAttemptResult } from "./cli-runtime"
 import { createWsRouter, type ClientState } from "./ws-router"
+import { deleteProjectUpload, inferAttachmentContentType, persistProjectUpload } from "./uploads"
+import { getProjectUploadDir } from "./paths"
+
+const MAX_UPLOAD_FILES = 10
+const MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024
+
+export async function persistUploadedFiles(args: {
+  projectId: string
+  localPath: string
+  files: File[]
+  persistUpload?: typeof persistProjectUpload
+}): Promise<ChatAttachment[]> {
+  const persistUpload = args.persistUpload ?? persistProjectUpload
+  const attachments: ChatAttachment[] = []
+
+  try {
+    for (const file of args.files) {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const attachment = await persistUpload({
+        projectId: args.projectId,
+        localPath: args.localPath,
+        fileName: file.name,
+        bytes,
+        fallbackMimeType: file.type || undefined,
+      })
+      attachments.push(attachment)
+    }
+  } catch (error) {
+    await Promise.allSettled(
+      attachments.map((attachment) => deleteProjectUpload({
+        localPath: args.localPath,
+        storedName: path.basename(attachment.absolutePath),
+      }))
+    )
+    throw error
+  }
+
+  return attachments
+}
 
 export interface StartKannaServerOptions {
   port?: number
@@ -79,7 +120,7 @@ export async function startKannaServer(options: StartKannaServerOptions = {}) {
       server = Bun.serve<ClientState>({
         port: actualPort,
         hostname,
-        fetch(req, serverInstance) {
+        async fetch(req, serverInstance) {
           const url = new URL(req.url)
 
           if (url.pathname === "/ws") {
@@ -93,6 +134,21 @@ export async function startKannaServer(options: StartKannaServerOptions = {}) {
 
           if (url.pathname === "/health") {
             return Response.json({ ok: true, port: actualPort })
+          }
+
+          const uploadResponse = await handleProjectUpload(req, url, store)
+          if (uploadResponse) {
+            return uploadResponse
+          }
+
+          const deleteUploadResponse = await handleProjectUploadDelete(req, url, store)
+          if (deleteUploadResponse) {
+            return deleteUploadResponse
+          }
+
+          const attachmentContentResponse = await handleAttachmentContent(req, url, store)
+          if (attachmentContentResponse) {
+            return attachmentContentResponse
           }
 
           return serveStatic(distDir, url.pathname)
@@ -138,6 +194,127 @@ export async function startKannaServer(options: StartKannaServerOptions = {}) {
     updateManager,
     stop: shutdown,
   }
+}
+
+async function handleProjectUpload(req: Request, url: URL, store: EventStore) {
+  if (req.method !== "POST") {
+    return null
+  }
+
+  const match = url.pathname.match(/^\/api\/projects\/([^/]+)\/uploads$/)
+  if (!match) {
+    return null
+  }
+
+  const project = store.getProject(match[1])
+  if (!project) {
+    return Response.json({ error: "Project not found" }, { status: 404 })
+  }
+
+  const formData = await req.formData()
+  const files = formData
+    .getAll("files")
+    .filter((value): value is File => value instanceof File)
+
+  if (files.length === 0) {
+    return Response.json({ error: "No files uploaded" }, { status: 400 })
+  }
+
+  if (files.length > MAX_UPLOAD_FILES) {
+    return Response.json({ error: `You can upload up to ${MAX_UPLOAD_FILES} files at a time.` }, { status: 400 })
+  }
+
+  for (const file of files) {
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      return Response.json(
+        { error: `File "${file.name}" exceeds the ${Math.floor(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024))} MB limit.` },
+        { status: 413 }
+      )
+    }
+  }
+
+  try {
+    const attachments = await persistUploadedFiles({
+      projectId: project.id,
+      localPath: project.localPath,
+      files,
+    })
+    return Response.json({ attachments })
+  } catch (error) {
+    console.error("[uploads] Upload failed:", error)
+    return Response.json({ error: "Upload failed" }, { status: 500 })
+  }
+}
+
+async function handleAttachmentContent(req: Request, url: URL, store: EventStore) {
+  const match = url.pathname.match(/^\/api\/projects\/([^/]+)\/uploads\/([^/]+)\/content$/)
+  if (!match) {
+    return null
+  }
+
+  if (req.method !== "GET") {
+    return new Response(null, {
+      status: 405,
+      headers: {
+        Allow: "GET",
+      },
+    })
+  }
+
+  const project = store.getProject(match[1])
+  if (!project) {
+    return Response.json({ error: "Project not found" }, { status: 404 })
+  }
+
+  const storedName = decodeURIComponent(match[2])
+  if (!storedName || storedName.includes("/") || storedName.includes("\\") || storedName === "." || storedName === "..") {
+    return Response.json({ error: "Invalid attachment path" }, { status: 400 })
+  }
+
+  const filePath = path.join(getProjectUploadDir(project.localPath), storedName)
+  const file = Bun.file(filePath)
+  try {
+    const info = await stat(filePath)
+    if (!info.isFile()) {
+      return Response.json({ error: "Attachment not found" }, { status: 404 })
+    }
+  } catch {
+    return Response.json({ error: "Attachment not found" }, { status: 404 })
+  }
+
+  return new Response(file, {
+    headers: {
+      "Content-Type": inferAttachmentContentType(storedName, file.type),
+    },
+  })
+}
+
+async function handleProjectUploadDelete(req: Request, url: URL, store: EventStore) {
+  if (req.method !== "DELETE") {
+    return null
+  }
+
+  const match = url.pathname.match(/^\/api\/projects\/([^/]+)\/uploads\/([^/]+)$/)
+  if (!match) {
+    return null
+  }
+
+  const project = store.getProject(match[1])
+  if (!project) {
+    return Response.json({ error: "Project not found" }, { status: 404 })
+  }
+
+  const storedName = decodeURIComponent(match[2])
+  if (!storedName || storedName.includes("/") || storedName.includes("\\") || storedName === "." || storedName === "..") {
+    return Response.json({ error: "Invalid attachment path" }, { status: 400 })
+  }
+
+  const deleted = await deleteProjectUpload({
+    localPath: project.localPath,
+    storedName,
+  })
+
+  return Response.json({ ok: deleted })
 }
 
 async function serveStatic(distDir: string, pathname: string) {
