@@ -1,5 +1,5 @@
 import { PatchDiff } from "@pierre/diffs/react"
-import { AlertTriangle, Ban, Check, ChevronDown, ChevronUp, Code, Columns2, Copy, Download, Ellipsis, GitBranch, GitBranchPlus, GitMerge, GitPullRequest, LoaderCircle, Minus, PenLine, RefreshCw, Rows3, Search, Trash2, Upload, WrapText } from "lucide-react"
+import { AlertTriangle, ArrowUp, Ban, Check, ChevronDown, ChevronUp, Code, Columns2, Copy, Download, Ellipsis, GitBranch, GitBranchPlus, GitMerge, GitPullRequest, LoaderCircle, Minus, PenLine, RefreshCw, Rows3, Search, Trash2, Upload, WrapText } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react"
 import type {
   ChatAttachment,
@@ -76,7 +76,7 @@ interface RightSidebarProps extends DiffFileActions {
   onCreateBranch: () => Promise<void>
   onGenerateCommitMessage: (args: { paths: string[] }) => Promise<{ subject: string; body: string }>
   onCommit: (args: { paths: string[]; summary: string; description: string; mode: DiffCommitMode }) => Promise<DiffCommitResult | null>
-  onSyncWithRemote: (action: "fetch" | "pull" | "publish") => Promise<unknown>
+  onSyncWithRemote: (action: "fetch" | "pull" | "push" | "publish") => Promise<unknown>
   onDiffRenderModeChange: (mode: DiffRenderMode) => void
   onWrapLinesChange: (wrap: boolean) => void
   onClose: () => void
@@ -195,7 +195,7 @@ function formatFetchTooltip(isoTimestamp?: string) {
   return `Last fetched ${formatRelativeTime(isoTimestamp)}`
 }
 
-function CommitHistoryRow({ entry }: { entry: ChatBranchHistoryEntry }) {
+function CommitHistoryRow({ entry, isPendingPush = false }: { entry: ChatBranchHistoryEntry; isPendingPush?: boolean }) {
   const relativeTime = formatRelativeTime(entry.authoredAt)
   const isClickable = Boolean(entry.githubUrl)
   return (
@@ -231,6 +231,17 @@ function CommitHistoryRow({ entry }: { entry: ChatBranchHistoryEntry }) {
               {tag}
             </span>
           ))}
+          {isPendingPush ? (
+            <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+              <ArrowUp className="size-3" />
+            </span>
+          ) : null}
+        </div>
+      ) : isPendingPush ? (
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+            <ArrowUp className="size-3" />
+          </span>
         </div>
       ) : null}
     </button>
@@ -1172,6 +1183,7 @@ function RightSidebarImpl({
   const isBusy = isGenerating || isCommitting
   const branchHistory = diffs.branchHistory?.entries ?? []
   const behindCount = diffs.behindCount ?? 0
+  const aheadCount = diffs.aheadCount ?? 0
   const isPublishedBranch = diffs.hasUpstream === true
   const isPublishableBranch = diffs.hasUpstream === false && Boolean(diffs.branchName)
   const encodedBranchName = diffs.branchName
@@ -1249,11 +1261,11 @@ function RightSidebarImpl({
     void handleGenerate()
   }
 
-  async function handleSync() {
+  async function handleSync(action: "fetch" | "pull" | "push" | "publish" = syncAction) {
     if (diffs.status !== "ready" || isSyncing) return
     setIsSyncing(true)
     try {
-      await onSyncWithRemote(syncAction)
+      await onSyncWithRemote(action)
     } finally {
       setIsSyncing(false)
     }
@@ -1353,6 +1365,21 @@ function RightSidebarImpl({
                     </span>
                   </Button>
                 )}
+                {isPublishedBranch && aheadCount > 0 ? (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => void handleSync("push")}
+                    disabled={isSyncing}
+                    className="h-7 gap-1.5 px-2 text-xs"
+                  >
+                    {isSyncing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                    <span>Push</span>
+                    <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-primary-foreground/15 px-1 text-[10px] text-primary-foreground">
+                      {aheadCount}
+                    </span>
+                  </Button>
+                ) : null}
                 {canOpenPullRequest && compareUrl ? (
                   <Button
                     variant="ghost"
@@ -1452,7 +1479,7 @@ function RightSidebarImpl({
                 </div>
               ) : (
                 <div className="space-y-1.5 p-1.5">
-                  {branchHistory.map((entry) => <CommitHistoryRow key={entry.sha} entry={entry} />)}
+                  {branchHistory.map((entry, index) => <CommitHistoryRow key={entry.sha} entry={entry} isPendingPush={index < aheadCount} />)}
                 </div>
               )
             ) : diffs.files.length === 0 ? (

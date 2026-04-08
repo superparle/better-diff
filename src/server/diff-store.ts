@@ -215,6 +215,35 @@ function createPushFailure(mode: DiffCommitMode, detail: string, snapshotChanged
   }
 }
 
+function createSyncPushFailure(detail: string, snapshotChanged: boolean): ChatSyncResult {
+  const normalized = detail.toLowerCase()
+  let title = "Push failed"
+  let message = summarizeGitFailure(detail, "Git could not push this branch.")
+
+  if (normalized.includes("non-fast-forward") || normalized.includes("fetch first")) {
+    title = "Branch is not up to date"
+    message = "Your branch is behind its remote. Pull or rebase, then try pushing again."
+  } else if (normalized.includes("has no upstream branch") || normalized.includes("set-upstream")) {
+    title = "No upstream branch configured"
+    message = "This branch does not have an upstream remote branch configured yet."
+  } else if (normalized.includes("merge conflict") || normalized.includes("resolve conflicts")) {
+    title = "Merge conflicts need resolution"
+    message = "Git reported conflicts while preparing the push. Resolve them, then try again."
+  } else if (normalized.includes("permission denied") || normalized.includes("authentication failed") || normalized.includes("could not read from remote repository")) {
+    title = "Remote authentication failed"
+    message = "Git could not authenticate with the remote repository."
+  }
+
+  return {
+    ok: false,
+    action: "push",
+    title,
+    message,
+    detail,
+    snapshotChanged,
+  }
+}
+
 async function resolveRepo(projectPath: string): Promise<{ repoRoot: string; baseCommit: string | null } | null> {
   const topLevel = await runGit(["rev-parse", "--show-toplevel"], projectPath)
   if (topLevel.exitCode !== 0) {
@@ -1496,7 +1525,7 @@ export class DiffStore {
   async syncBranch(args: {
     projectId: string
     projectPath: string
-    action: "fetch" | "pull" | "publish"
+    action: "fetch" | "pull" | "push" | "publish"
   }): Promise<ChatSyncResult> {
     const repo = await resolveRepo(args.projectPath)
     if (!repo) {
@@ -1525,6 +1554,40 @@ export class DiffStore {
           detail,
           snapshotChanged: false,
         }
+      }
+
+      const snapshotChanged = await this.refreshSnapshot(args.projectId, args.projectPath)
+      const branchName = await getBranchName(repo.repoRoot)
+      const nextHasUpstream = await hasUpstreamBranch(repo.repoRoot)
+      const { aheadCount, behindCount } = nextHasUpstream
+        ? await getUpstreamStatusCounts(repo.repoRoot)
+        : { aheadCount: undefined, behindCount: undefined }
+
+      return {
+        ok: true,
+        action: args.action,
+        branchName,
+        aheadCount,
+        behindCount,
+        snapshotChanged,
+      }
+    }
+
+    if (args.action === "push") {
+      if (!hasUpstream) {
+        return {
+          ok: false,
+          action: args.action,
+          title: "Push failed",
+          message: "This branch does not have an upstream remote branch configured yet.",
+          snapshotChanged: false,
+        }
+      }
+
+      const pushResult = await runGit(["push"], repo.repoRoot)
+      if (pushResult.exitCode !== 0) {
+        const detail = formatGitFailure(pushResult)
+        return createSyncPushFailure(detail, false)
       }
 
       const snapshotChanged = await this.refreshSnapshot(args.projectId, args.projectPath)

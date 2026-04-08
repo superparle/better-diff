@@ -563,13 +563,13 @@ export interface BranchActionFailure {
 }
 
 export type ChatSyncSuccess = BranchActionSuccess & {
-  action: "fetch" | "pull" | "publish"
+  action: "fetch" | "pull" | "push" | "publish"
   aheadCount?: number
   behindCount?: number
 }
 
 export type ChatSyncFailure = BranchActionFailure & {
-  action: "fetch" | "pull" | "publish"
+  action: "fetch" | "pull" | "push" | "publish"
 }
 
 export type ChatSyncResult = ChatSyncSuccess | ChatSyncFailure

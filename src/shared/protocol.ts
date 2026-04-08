@@ -114,7 +114,7 @@ export type ClientCommand =
           remoteRef?: string
         }
     }
-  | { type: "chat.syncBranch"; chatId: string; action: "fetch" | "pull" | "publish" }
+  | { type: "chat.syncBranch"; chatId: string; action: "fetch" | "pull" | "push" | "publish" }
   | {
       type: "chat.checkoutBranch"
       chatId: string
