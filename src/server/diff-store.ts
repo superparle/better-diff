@@ -2103,23 +2103,26 @@ export class DiffStore {
     projectPath: string
     path: string
   }) {
-    const relativePath = normalizeRepoRelativePath(args.path)
+    const ignoreEntry = normalizeRepoRelativePath(args.path)
     const repo = await resolveRepo(args.projectPath)
     if (!repo) {
       throw new Error("Project is not in a git repository")
     }
 
-    const entry = await findDirtyPath(repo.repoRoot, relativePath)
-    if (!entry) {
-      throw new Error(`File is no longer changed: ${relativePath}`)
-    }
-    if (!entry.isUntracked) {
+    const dirtyPaths = await listDirtyPaths(repo.repoRoot)
+    const exactEntry = dirtyPaths.find((candidate) => candidate.path === ignoreEntry)
+    if (exactEntry && !exactEntry.isUntracked) {
       throw new Error("Only untracked files can be ignored from the diff viewer")
+    }
+
+    const entry = dirtyPaths.find((candidate) => candidate.isUntracked && (candidate.path === ignoreEntry || candidate.path.startsWith(ignoreEntry)))
+    if (!entry) {
+      throw new Error(`File is no longer changed: ${ignoreEntry}`)
     }
 
     const gitignorePath = path.join(repo.repoRoot, ".gitignore")
     const currentContents = await readFile(gitignorePath, "utf8").catch(() => null)
-    const nextContents = appendGitIgnoreEntry(currentContents, relativePath)
+    const nextContents = appendGitIgnoreEntry(currentContents, ignoreEntry)
     if (nextContents !== currentContents) {
       await writeFile(gitignorePath, nextContents, "utf8")
     }

@@ -26,7 +26,7 @@ import { AttachmentPreviewModal } from "../messages/AttachmentPreviewModal"
 import { classifyAttachmentPreview } from "../messages/attachmentPreview"
 import { overrideContextWindowMaxTokens, type ContextWindowSnapshot } from "../../lib/contextWindow"
 
-const MAX_FILES_PER_DROP = 10
+const MAX_FILES_PER_DROP = 50
 const MAX_CONCURRENT_UPLOADS = 3
 
 const CLIPBOARD_EXTENSION_BY_MIME_TYPE: Record<string, string> = {

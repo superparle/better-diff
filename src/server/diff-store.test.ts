@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { appendGitIgnoreEntry, DiffStore, extractGitHubRepoSlug, fetchGitHubPullRequests } from "./diff-store"
@@ -271,6 +271,27 @@ describe("DiffStore", () => {
     })
 
     expect(await readFile(path.join(repoRoot, ".gitignore"), "utf8")).toBe("scratch.log\n")
+  })
+
+  test("ignoreFile accepts a folder entry for an untracked diff", async () => {
+    const repoRoot = await createRepo()
+    tempDirs.push(repoRoot)
+    await writeFile(path.join(repoRoot, "tracked.txt"), "base\n", "utf8")
+    await run(["git", "add", "."], repoRoot)
+    await run(["git", "commit", "-m", "init"], repoRoot)
+    await mkdir(path.join(repoRoot, "tmp/cache"), { recursive: true })
+    await writeFile(path.join(repoRoot, "tmp/cache/output.log"), "tmp\n", "utf8")
+
+    const store = new DiffStore(repoRoot)
+    await store.initialize()
+    await store.refreshSnapshot("project-1", repoRoot)
+    await store.ignoreFile({
+      projectId: "project-1",
+      projectPath: repoRoot,
+      path: "tmp/cache/",
+    })
+
+    expect(await readFile(path.join(repoRoot, ".gitignore"), "utf8")).toBe("tmp/cache/\n")
   })
 
   test("appendGitIgnoreEntry does not duplicate an existing identical entry", () => {

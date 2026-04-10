@@ -57,6 +57,15 @@ const DIFF_REFRESH_INTERVAL_MS = 5_000
 const EMPTY_DIFF_SNAPSHOT: ChatDiffSnapshot = { status: "unknown", files: [] }
 const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 12
 
+export function getIgnoreFolderEntryFromDiffPath(filePath: string) {
+  const normalized = filePath.replaceAll("\\", "/").replace(/\/+/g, "/").replace(/\/$/u, "")
+  const lastSlashIndex = normalized.lastIndexOf("/")
+  if (lastSlashIndex <= 0) {
+    return null
+  }
+  return `${normalized.slice(0, lastSlashIndex)}/`
+}
+
 function serializeBranchSelection(branch: ChatBranchListEntry) {
   return branch.kind === "local"
     ? { kind: "local" as const, name: branch.name }
@@ -852,6 +861,42 @@ export function ChatPage() {
       }
     })()
   }, [dialog, state.socket])
+
+  const handleIgnoreDiffFolder = useCallback((filePath: string) => {
+    const chatId = activeChatIdRef.current
+    if (!chatId) return
+
+    const initialValue = getIgnoreFolderEntryFromDiffPath(filePath)
+    if (!initialValue) return
+
+    void (async () => {
+      const ignorePath = await dialog.prompt({
+        title: "Ignore Folder",
+        description: "Edit the folder pattern to add to .gitignore.",
+        initialValue,
+        confirmLabel: "Ignore",
+      })
+      if (!ignorePath) return
+
+      try {
+        await state.socket.command({
+          type: "chat.ignoreDiffFile",
+          chatId,
+          path: ignorePath,
+        })
+      } catch (error) {
+        await dialog.alert({
+          title: "Ignore failed",
+          description: error instanceof Error ? error.message : String(error),
+          closeLabel: "OK",
+        })
+      }
+    })()
+  }, [dialog, state.socket])
+
+  const handleOpenDiffInFinder = useCallback((filePath: string) => {
+    void state.handleOpenExternalPath("open_finder", filePath)
+  }, [state.handleOpenExternalPath])
 
   const handleCommitDiffs = useCallback(async (args: { paths: string[]; summary: string; description: string; mode: DiffCommitMode }) => {
     const chatId = activeChatIdRef.current
@@ -1746,8 +1791,10 @@ export function ChatPage() {
                 diffRenderMode={diffRenderMode}
                 wrapLines={wrapDiffLines}
                 onOpenFile={handleOpenDiffFile}
+                onOpenInFinder={handleOpenDiffInFinder}
                 onDiscardFile={handleDiscardDiffFile}
                 onIgnoreFile={handleIgnoreDiffFile}
+                onIgnoreFolder={handleIgnoreDiffFolder}
                 onCopyFilePath={handleCopyDiffFilePath}
                 onCopyRelativePath={handleCopyDiffRelativePath}
                 onLoadPatch={handleLoadDiffPatch}
