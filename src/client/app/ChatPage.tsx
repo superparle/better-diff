@@ -445,7 +445,7 @@ const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
               {commandError}
             </div>
           ) : null}
-          <div style={{ height: 250 }} aria-hidden="true" />
+          <div style={{ height: transcriptPaddingBottom }} aria-hidden="true" />
         </div>
       </div>
 
@@ -1657,7 +1657,7 @@ export function ChatPage() {
           isHistoryLoading={state.isHistoryLoading}
           hasOlderHistory={state.hasOlderHistory}
           isProcessing={state.isProcessing}
-          runtimeStatus={state.runtime?.status ?? null}
+          runtimeStatus={state.runtimeStatus}
           isDraining={state.isDraining}
           commandError={state.commandError}
           loadOlderHistory={state.loadOlderHistory}
@@ -1682,7 +1682,7 @@ export function ChatPage() {
         activeChatId={state.activeChatId}
         previousPrompt={state.previousPrompt}
         hasSelectedProject={state.hasSelectedProject}
-        runtimeStatus={state.runtime?.status ?? null}
+        runtimeStatus={state.runtimeStatus}
         canCancel={state.canCancel}
         projectId={projectId}
         activeProvider={state.runtime?.provider ?? null}

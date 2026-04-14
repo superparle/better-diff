@@ -512,6 +512,10 @@ export function createWsRouter({
     })
   }
 
+  async function broadcastChatStateImmediately(chatId: string) {
+    await broadcastChatAndSidebar(chatId)
+  }
+
   function broadcastError(message: string) {
     for (const ws of sockets) {
       send(ws, {
@@ -980,6 +984,7 @@ export function createWsRouter({
       sockets.delete(ws)
     },
     broadcastSnapshots,
+    broadcastChatStateImmediately,
     scheduleBroadcast,
     scheduleChatStateBroadcast,
     pruneStaleEmptyChats: () => maybePruneStaleEmptyChats(),

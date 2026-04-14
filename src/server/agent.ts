@@ -91,7 +91,7 @@ interface ClaudeSessionState {
 
 interface AgentCoordinatorArgs {
   store: EventStore
-  onStateChange: (chatId?: string) => void
+  onStateChange: (chatId?: string, options?: { immediate?: boolean }) => void
   codexManager?: CodexAppServerManager
   generateTitle?: (messageContent: string, cwd: string) => Promise<GenerateChatTitleResult>
   startClaudeSession?: (args: {
@@ -629,7 +629,7 @@ async function startClaudeSession(args: {
 
 export class AgentCoordinator {
   private readonly store: EventStore
-  private readonly onStateChange: (chatId?: string) => void
+  private readonly onStateChange: (chatId?: string, options?: { immediate?: boolean }) => void
   private readonly codexManager: CodexAppServerManager
   private readonly generateTitle: (messageContent: string, cwd: string) => Promise<GenerateChatTitleResult>
   private readonly startClaudeSessionFn: NonNullable<AgentCoordinatorArgs["startClaudeSession"]>
@@ -668,8 +668,8 @@ export class AgentCoordinator {
     return new Set(this.drainingStreams.keys())
   }
 
-  private emitStateChange(chatId?: string) {
-    this.onStateChange(chatId)
+  private emitStateChange(chatId?: string, options?: { immediate?: boolean }) {
+    this.onStateChange(chatId, options)
   }
 
   getActiveTurnProfile(chatId: string): SendToStartingProfile | null {
@@ -905,7 +905,7 @@ export class AgentCoordinator {
       chatId: args.chatId,
       status: active.status,
     })
-    this.emitStateChange(args.chatId)
+    this.emitStateChange(args.chatId, { immediate: active.status === "starting" })
     logSendToStartingProfile(args.profile, "start_turn.state_change_emitted", {
       chatId: args.chatId,
       status: active.status,

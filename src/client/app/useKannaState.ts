@@ -147,6 +147,11 @@ export interface OptimisticUserPrompt {
   entry: UserPromptEntry
 }
 
+interface OptimisticProcessingState {
+  scopeId: string
+  ackedAt: number | null
+}
+
 function serializeAttachmentSignature(attachment: ChatAttachment) {
   return JSON.stringify({
     id: attachment.id,
@@ -336,7 +341,7 @@ export function getUiUpdateRestartReconnectAction(
   return "none"
 }
 
-const FIXED_TRANSCRIPT_PADDING_BOTTOM = 320
+const FIXED_TRANSCRIPT_PADDING_BOTTOM = 150
 const UI_UPDATE_RESTART_STORAGE_KEY = "kanna:ui-update-restart"
 
 function getUiUpdateRestartPhase() {
@@ -416,6 +421,7 @@ export interface KannaState {
   previousPrompt: string | null
   latestToolIds: ReturnType<typeof getLatestToolIds>
   runtime: ChatSnapshot["runtime"] | null
+  runtimeStatus: string | null
   isHistoryLoading: boolean
   hasOlderHistory: boolean
   availableProviders: ProviderCatalogEntry[]
@@ -494,6 +500,7 @@ export function useKannaState(activeChatId: string | null): KannaState {
   const [startingLocalPath, setStartingLocalPath] = useState<string | null>(null)
   const [pendingChatId, setPendingChatId] = useState<string | null>(null)
   const [optimisticUserPrompts, setOptimisticUserPrompts] = useState<OptimisticUserPrompt[]>([])
+  const [optimisticProcessing, setOptimisticProcessing] = useState<OptimisticProcessingState | null>(null)
   const [focusEpoch, setFocusEpoch] = useState(0)
   const sendToStartingProfilesRef = useRef<Map<string, SendToStartingTrace>>(new Map())
   const draftByChatId = useChatInputStore((state) => state.drafts)
@@ -824,9 +831,13 @@ export function useKannaState(activeChatId: string | null): KannaState {
   const previousPrompt = useMemo(() => getPreviousPrompt(messages), [messages])
   const latestToolIds = useMemo(() => getLatestToolIds(messages), [messages])
   const runtime = activeChatSnapshot?.runtime ?? null
+  const optimisticRuntimeStatus = optimisticProcessing?.scopeId === optimisticScopeId && (!runtime || runtime.status === "idle")
+    ? "starting"
+    : null
+  const effectiveRuntimeStatus = optimisticRuntimeStatus ?? runtime?.status ?? null
   const availableProviders = activeChatSnapshot?.availableProviders ?? PROVIDERS
-  const isProcessing = isProcessingStatus(runtime?.status)
-  const canCancel = canCancelStatus(runtime?.status)
+  const isProcessing = isProcessingStatus(effectiveRuntimeStatus ?? undefined)
+  const canCancel = canCancelStatus(effectiveRuntimeStatus ?? undefined)
   const isDraining = runtime?.isDraining ?? false
   const transcriptPaddingBottom = FIXED_TRANSCRIPT_PADDING_BOTTOM
   const showScrollButton = !isAtBottom && messages.length > 0
@@ -841,6 +852,32 @@ export function useKannaState(activeChatId: string | null): KannaState {
     ?? sidebarData.projectGroups[0]?.groupKey
     ?? fallbackLocalProjectPath
   )
+
+  useEffect(() => {
+    if (optimisticProcessing?.scopeId !== optimisticScopeId) {
+      return
+    }
+    if (runtime?.status && runtime.status !== "idle") {
+      setOptimisticProcessing(null)
+    }
+  }, [optimisticProcessing, optimisticScopeId, runtime?.status])
+
+  useEffect(() => {
+    if (!optimisticProcessing?.ackedAt || optimisticProcessing.scopeId !== optimisticScopeId) {
+      return
+    }
+    if (runtime?.status && runtime.status !== "idle") {
+      return
+    }
+    const timeoutId = window.setTimeout(() => {
+      setOptimisticProcessing((current) => (
+        current?.scopeId === optimisticScopeId && current.ackedAt === optimisticProcessing.ackedAt
+          ? null
+          : current
+      ))
+    }, 300)
+    return () => window.clearTimeout(timeoutId)
+  }, [optimisticProcessing, optimisticScopeId, runtime?.status])
 
   useEffect(() => {
     if (!activeChatId || runtime?.status !== "starting") {
@@ -1099,6 +1136,10 @@ export function useKannaState(activeChatId: string | null): KannaState {
     const clientTraceId = generateUUID()
     const signature = getUserPromptSignature(content, attachments)
     const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
+    setOptimisticProcessing({
+      scopeId: optimisticScopeId,
+      ackedAt: null,
+    })
     const sendTrace: SendToStartingTrace = {
       traceId: clientTraceId,
       optimisticId,
@@ -1167,6 +1208,14 @@ export function useKannaState(activeChatId: string | null): KannaState {
       })
       sendTrace.ackAt = performance.now()
       sendTrace.serverChatId = result.chatId ?? sendTrace.serverChatId
+      setOptimisticProcessing((current) => {
+        if (!current) return current
+        const nextScopeId = !activeChatId && result.chatId ? result.chatId : current.scopeId
+        return {
+          scopeId: nextScopeId,
+          ackedAt: performance.now(),
+        }
+      })
       logSendToStartingTrace(sendTrace, "chat_send_ack_received", {
         resultChatId: result.chatId ?? null,
       })
@@ -1186,6 +1235,7 @@ export function useKannaState(activeChatId: string | null): KannaState {
       setCommandError(null)
     } catch (error) {
       setOptimisticUserPrompts((current) => current.filter((prompt) => prompt.id !== optimisticId))
+      setOptimisticProcessing(null)
       logSendToStartingTrace(sendTrace, "handle_send_failed", {
         error: error instanceof Error ? error.message : String(error),
       })
@@ -1409,6 +1459,7 @@ export function useKannaState(activeChatId: string | null): KannaState {
     previousPrompt,
     latestToolIds,
     runtime,
+    runtimeStatus: effectiveRuntimeStatus,
     isHistoryLoading,
     hasOlderHistory,
     availableProviders,

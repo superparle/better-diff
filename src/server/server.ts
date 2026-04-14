@@ -99,8 +99,12 @@ export async function startKannaServer(options: StartKannaServerOptions = {}) {
     : null
   const agent = new AgentCoordinator({
     store,
-    onStateChange: (chatId?: string) => {
+    onStateChange: (chatId?: string, options?: { immediate?: boolean }) => {
       if (chatId) {
+        if (options?.immediate) {
+          void router.broadcastChatStateImmediately(chatId)
+          return
+        }
         router.scheduleChatStateBroadcast(chatId)
         return
       }
