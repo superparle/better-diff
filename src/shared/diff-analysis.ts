@@ -1,4 +1,4 @@
-import type { ChatDiffFile } from "./types"
+import type { ChatDiffFile, DiffComparisonMode } from "./types"
 
 export type DiffAnalysisStatus =
   | "idle"
@@ -87,11 +87,16 @@ export function createEmptyDiffAnalysisSnapshot(projectId: string): DiffAnalysis
   }
 }
 
-export function createDiffAnalysisRequestKey(files: ChatDiffFile[], paths: string[]) {
+export function createDiffAnalysisRequestKey(
+  files: ChatDiffFile[],
+  paths: string[],
+  comparisonMode: DiffComparisonMode = "working_tree"
+) {
   const selected = new Set(paths)
-  return files
+  const fileKey = files
     .filter((file) => selected.has(file.path))
     .map((file) => `${file.path}\u0000${file.patchDigest}`)
     .sort((left, right) => left.localeCompare(right))
     .join("\u0001")
+  return `${comparisonMode}\u0002${fileKey}`
 }

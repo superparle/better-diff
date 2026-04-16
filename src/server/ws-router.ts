@@ -826,8 +826,32 @@ export function createWsRouter({
           const result = await resolvedDiffStore.readPatch({
             projectPath: project.localPath,
             path: command.path,
+            comparisonMode: command.comparisonMode,
           })
           send(ws, { v: PROTOCOL_VERSION, type: "ack", id, result })
+          return
+        }
+        case "project.analyzeDiff": {
+          const project = store.getProject(command.projectId)
+          if (!project) {
+            throw new Error("Project not found")
+          }
+          await resolvedDiffAnalysisStore.startAnalysis({
+            projectId: project.id,
+            projectPath: project.localPath,
+            paths: command.paths,
+            comparisonMode: command.comparisonMode,
+          })
+          send(ws, { v: PROTOCOL_VERSION, type: "ack", id })
+          return
+        }
+        case "project.cancelDiffAnalysis": {
+          const project = store.getProject(command.projectId)
+          if (!project) {
+            throw new Error("Project not found")
+          }
+          await resolvedDiffAnalysisStore.cancelAnalysis(project.id)
+          send(ws, { v: PROTOCOL_VERSION, type: "ack", id })
           return
         }
         case "system.openExternal": {
@@ -896,6 +920,7 @@ export function createWsRouter({
             projectId: project.id,
             projectPath: project.localPath,
             paths: command.paths,
+            comparisonMode: command.comparisonMode,
           })
           send(ws, { v: PROTOCOL_VERSION, type: "ack", id })
           return

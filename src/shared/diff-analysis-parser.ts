@@ -61,6 +61,19 @@ export function parseAgentResponse(text = ""): ParsedDiffAnalysis {
   }
 }
 
+export function extractPartialSummaryPreview(text = "") {
+  const source = String(text)
+  const summaryStart = source.indexOf(SUMMARY_START)
+  if (summaryStart === -1) {
+    return ""
+  }
+
+  return source
+    .slice(summaryStart + SUMMARY_START.length)
+    .replace(SUMMARY_END, "")
+    .trim()
+}
+
 function parseNoteBlocks(source: string, startMarker: string, endMarker: string) {
   const hunks: DiffAnalysisNote[] = []
   let cursor = 0

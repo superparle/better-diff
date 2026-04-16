@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { parseAgentResponse } from "./diff-analysis-parser"
+import { extractPartialSummaryPreview, parseAgentResponse } from "./diff-analysis-parser"
 
 describe("parseAgentResponse", () => {
   test("parses completed hunk blocks and summary", () => {
@@ -87,5 +87,12 @@ Description: Duplicate.
 --- END CHANGE NOTE ---`)
 
     expect(parsed.hunks.map((hunk) => hunk.description)).toEqual(["First."])
+  })
+
+  test("extracts a usable preview from an unterminated summary block", () => {
+    expect(extractPartialSummaryPreview(`--- SUMMARY ---
+This is the final summary without a closing marker.`)).toBe(
+      "This is the final summary without a closing marker."
+    )
   })
 })

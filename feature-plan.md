@@ -10,7 +10,7 @@ The integrated feature should:
 - Split unified diffs into smaller change blocks with compact model context and expandable viewer context.
 - Ask Codex to order those blocks by data flow and write one-sentence notes plus an overall summary.
 - Stream progress/status into the existing React UI.
-- Preserve the friend UI direction already present in `src/client/components/chat-ui/RightSidebar.tsx`: `Raw`, `AI`, and `Summary` panes.
+- Preserve the friend UI direction already present in `src/client/components/chat-ui/RightSidebar.tsx`: `Raw`, `Reordered`, `Natural Language`, and `Summary` panes.
 
 ## What Exists Now
 
@@ -76,7 +76,7 @@ Instead:
 
 ## Product Scope
 
-Initial production scope should be current worktree changes.
+Initial production scope should include current worktree changes and a separate current-branch-vs-default-branch comparison.
 
 The `ui-test` presets (`lastCommit`, `working`, `staged`, `mainBranch`, `custom`) are useful for the prototype, but the production sidebar is centered on current uncommitted project changes. Add range selection later if needed.
 
@@ -86,6 +86,11 @@ Recommended first behavior:
 - If no files are selected, disable the action.
 - If all files are selected, the analysis is effectively for the full current diff.
 - Invalidate or mark the analysis stale when any analyzed file's `patchDigest` changes.
+- Add a compare mode control for:
+  - local worktree changes, which keeps the existing commit/discard/ignore behavior;
+  - current branch against the default branch, labeled from the repository default branch when available and falling back to `main`.
+- Branch comparison should diff `HEAD` against the merge base with the default branch and should not expose worktree-only actions such as discard, ignore, or commit.
+- Analysis, raw patch loading, selected paths, and staleness keys must all be scoped to the active compare mode so a local-worktree analysis is not reused for the branch-vs-main view.
 
 ## Requested UX Revision
 
@@ -108,6 +113,8 @@ Default behavior:
 - Add spacing after `Multi` so it reads as a separate mode switch, not another diff tab.
 - When `Multi` is off, selecting a tab collapses back to a single visible panel.
 - When `Multi` is on, tab buttons can toggle multiple visible panels, but at least one panel should remain visible.
+- When `Multi` is on, each visible panel should own its own vertical scroll container.
+- When `Multi` is off, keep the current single scroll container behavior so sticky raw diff headers and the overall pane feel unchanged.
 
 ### Split AI Output
 
@@ -142,6 +149,7 @@ Requirements:
 - The diff panels should scroll independently above the commit form.
 - The commit form should no longer float in the middle of the pane with a gradient overlay.
 - Keep the existing generate/commit behavior and context-menu `Commit Only` fallback.
+- Hide the commit form when viewing the current-branch-vs-default-branch comparison because that view can include already-committed branch changes.
 
 ## Data Model
 

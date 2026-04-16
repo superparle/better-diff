@@ -4,6 +4,7 @@ import type {
   ChatDiffSnapshot,
   ChatHistoryPage,
   ChatSnapshot,
+  DiffComparisonMode,
   DiffCommitMode,
   KeybindingsSnapshot,
   LlmProviderSnapshot,
@@ -54,7 +55,9 @@ export type ClientCommand =
   | { type: "project.create"; localPath: string; title: string }
   | { type: "project.remove"; projectId: string }
   | { type: "sidebar.reorderProjectGroups"; projectIds: string[] }
-  | { type: "project.readDiffPatch"; projectId: string; path: string }
+  | { type: "project.readDiffPatch"; projectId: string; path: string; comparisonMode?: DiffComparisonMode }
+  | { type: "project.analyzeDiff"; projectId: string; paths: string[]; comparisonMode?: DiffComparisonMode }
+  | { type: "project.cancelDiffAnalysis"; projectId: string }
   | { type: "system.ping" }
   | { type: "update.check"; force?: boolean }
   | { type: "update.install" }
@@ -95,7 +98,7 @@ export type ClientCommand =
       planMode?: boolean
     }
   | { type: "chat.refreshDiffs"; chatId: string }
-  | { type: "chat.analyzeDiff"; chatId: string; paths: string[] }
+  | { type: "chat.analyzeDiff"; chatId: string; paths: string[]; comparisonMode?: DiffComparisonMode }
   | { type: "chat.cancelDiffAnalysis"; chatId: string }
   | { type: "chat.initGit"; chatId: string }
   | { type: "chat.getGitHubPublishInfo"; chatId: string }

@@ -7,6 +7,7 @@ import type {
   ChatBranchListEntry,
   ChatBranchListResult,
   ChatDiffSnapshot,
+  DiffComparisonMode,
   DiffCommitMode,
   DiffCommitResult,
   ChatMergeBranchResult,
@@ -15,6 +16,7 @@ import type {
   GitHubRepoAvailabilityResult,
 } from "../../../shared/types"
 import { createDiffAnalysisRequestKey, type DiffAnalysisSnapshot, type DiffAnalysisSourceBlock } from "../../../shared/diff-analysis"
+import { extractPartialSummaryPreview } from "../../../shared/diff-analysis-parser"
 import { useStickyState } from "../../hooks/useStickyState"
 import { cn } from "../../lib/utils"
 import { useDiffCommitStore } from "../../stores/diffCommitStore"
@@ -37,6 +39,7 @@ type DiffFile = ChatDiffSnapshot["files"][number]
 type SidebarViewMode = "changes" | "history"
 type DiffPanelKey = "raw" | "reordered" | "natural" | "summary"
 const EMPTY_CHECKED_PATHS: Record<string, boolean> = {}
+const DEFAULT_DIFF_COMPARISON_MODE: DiffComparisonMode = "working_tree"
 
 const DEFAULT_DIFF_PANEL_VISIBILITY: Record<DiffPanelKey, boolean> = {
   raw: true,
@@ -59,6 +62,10 @@ function createSingleDiffPanelVisibility(panel: DiffPanelKey): Record<DiffPanelK
     natural: panel === "natural",
     summary: panel === "summary",
   }
+}
+
+function createDiffPatchCacheKey(comparisonMode: DiffComparisonMode, path: string) {
+  return `${comparisonMode}\u0000${path}`
 }
 
 function getDiffPreviewAttachment(projectId: string | null, file: DiffFile): ChatAttachment | null {
@@ -99,14 +106,14 @@ interface RightSidebarProps extends DiffFileActions {
   editorLabel: string
   diffRenderMode: DiffRenderMode
   wrapLines: boolean
-  onLoadPatch: (path: string) => Promise<string>
+  onLoadPatch: (args: { path: string; comparisonMode: DiffComparisonMode }) => Promise<string>
   onListBranches: () => Promise<ChatBranchListResult>
   onPreviewMergeBranch: (branch: ChatBranchListEntry) => Promise<ChatMergePreviewResult>
   onMergeBranch: (branch: ChatBranchListEntry) => Promise<ChatMergeBranchResult | null>
   onCheckoutBranch: (branch: ChatBranchListEntry) => Promise<void>
   onCreateBranch: () => Promise<void>
   onGenerateCommitMessage: (args: { paths: string[] }) => Promise<{ subject: string; body: string }>
-  onAnalyzeDiff: (paths: string[]) => Promise<void>
+  onAnalyzeDiff: (args: { paths: string[]; comparisonMode: DiffComparisonMode }) => Promise<void>
   onCancelDiffAnalysis: () => Promise<void>
   onInitializeGit: () => Promise<unknown>
   onGetGitHubPublishInfo: () => Promise<GitHubPublishInfo>
@@ -384,10 +391,12 @@ function DiffAnalysisReorderedPanel({
   analysis,
   selectedPaths,
   currentRequestKey,
+  scrollable = false,
 }: {
   analysis: DiffAnalysisSnapshot | null
   selectedPaths: string[]
   currentRequestKey: string | null
+  scrollable?: boolean
 }) {
   const [contextVisibility, setContextVisibility] = useState<Record<string, { before?: boolean; after?: boolean }>>({})
 
@@ -415,8 +424,11 @@ function DiffAnalysisReorderedPanel({
   }
 
   return (
-    <section className="min-w-0 rounded-xl border border-border bg-background">
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background px-3 py-2">
+    <section className={cn("min-w-0 rounded-xl border border-border bg-background", scrollable && "flex h-full min-h-0 flex-col overflow-hidden")}>
+      <div className={cn(
+        "flex items-center justify-between gap-3 border-b border-border bg-background px-3 py-2",
+        scrollable ? "shrink-0" : "sticky top-0 z-10"
+      )}>
         <div className="min-w-0">
           <div className="text-sm font-medium text-foreground">Reordered</div>
           <div className={cn(
@@ -427,7 +439,7 @@ function DiffAnalysisReorderedPanel({
           </div>
         </div>
       </div>
-      <div className="space-y-2 p-2">
+      <div className={cn("flex flex-col gap-2 p-2", scrollable && "min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]")}>
         {selectedPaths.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
             Select files to analyze.
@@ -494,10 +506,12 @@ function DiffAnalysisNaturalLanguagePanel({
   analysis,
   selectedPaths,
   currentRequestKey,
+  scrollable = false,
 }: {
   analysis: DiffAnalysisSnapshot | null
   selectedPaths: string[]
   currentRequestKey: string | null
+  scrollable?: boolean
 }) {
   const isStale = Boolean(analysis?.requestKey && currentRequestKey && analysis.requestKey !== currentRequestKey)
   const sourceBlocksById = new Map((analysis?.sourceBlocks ?? []).map((block) => [block.id, block]))
@@ -506,8 +520,11 @@ function DiffAnalysisNaturalLanguagePanel({
   const running = isAnalysisRunning(analysis)
 
   return (
-    <section className="min-w-0 rounded-xl border border-border bg-background">
-      <div className="sticky top-0 z-10 border-b border-border bg-background px-3 py-2">
+    <section className={cn("min-w-0 rounded-xl border border-border bg-background", scrollable && "flex h-full min-h-0 flex-col overflow-hidden")}>
+      <div className={cn(
+        "border-b border-border bg-background px-3 py-2",
+        scrollable ? "shrink-0" : "sticky top-0 z-10"
+      )}>
         <div className="min-w-0">
           <div className="text-sm font-medium text-foreground">Natural Language</div>
           <div className={cn(
@@ -518,7 +535,7 @@ function DiffAnalysisNaturalLanguagePanel({
           </div>
         </div>
       </div>
-      <div className="space-y-2 p-2">
+      <div className={cn("flex flex-col gap-2 p-2", scrollable && "min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]")}>
         {selectedPaths.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
             Select files to analyze.
@@ -558,19 +575,28 @@ function DiffAnalysisSummaryPanel({
   analysis,
   selectedPaths,
   currentRequestKey,
+  scrollable = false,
 }: {
   analysis: DiffAnalysisSnapshot | null
   selectedPaths: string[]
   currentRequestKey: string | null
+  scrollable?: boolean
 }) {
   const isStale = Boolean(analysis?.requestKey && currentRequestKey && analysis.requestKey !== currentRequestKey)
   const summary = analysis?.parsed.summary.trim() ?? ""
+  const recoveredSummary = analysis?.status === "completed"
+    ? extractPartialSummaryPreview(analysis?.parsed.partial ?? "")
+    : ""
+  const displaySummary = summary || recoveredSummary
   const hasStarted = Boolean(analysis && analysis.status !== "idle")
   const running = isAnalysisRunning(analysis)
 
   return (
-    <section className="min-w-0 rounded-xl border border-border bg-background">
-      <div className="sticky top-0 z-10 border-b border-border bg-background px-3 py-2">
+    <section className={cn("min-w-0 rounded-xl border border-border bg-background", scrollable && "flex h-full min-h-0 flex-col overflow-hidden")}>
+      <div className={cn(
+        "border-b border-border bg-background px-3 py-2",
+        scrollable ? "shrink-0" : "sticky top-0 z-10"
+      )}>
         <div className="min-w-0">
           <div className="text-sm font-medium text-foreground">Summary</div>
           <div className={cn(
@@ -581,18 +607,22 @@ function DiffAnalysisSummaryPanel({
           </div>
         </div>
       </div>
-      <div className="space-y-2 p-2">
-        {summary ? (
+      <div className={cn("flex flex-col gap-2 p-2", scrollable && "min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]")}>
+        {displaySummary ? (
           <div className="rounded-lg border border-border bg-muted/30 px-3 py-3 text-sm leading-6 text-foreground">
-            {summary}
+            {displaySummary}
           </div>
         ) : selectedPaths.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
             Select files to summarize.
           </div>
+        ) : hasStarted ? (
+          <div className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
+            {running ? "Waiting for the summary from Codex." : "No summary was returned."}
+          </div>
         ) : (
           <div className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
-            {hasStarted && running ? "Waiting for the summary from Codex." : "Analysis starts automatically for selected files."}
+            Analysis starts automatically for selected files.
           </div>
         )}
       </div>
@@ -1500,6 +1530,8 @@ function DiffFileCard({
   projectId,
   isCollapsed,
   isChecked,
+  checkboxLabel,
+  enableWorktreeActions,
   editorLabel,
   diffRenderMode,
   wrapLines,
@@ -1516,6 +1548,8 @@ function DiffFileCard({
   projectId: string | null
   isCollapsed: boolean
   isChecked: boolean
+  checkboxLabel?: string
+  enableWorktreeActions: boolean
   editorLabel: string
   diffRenderMode: DiffRenderMode
   wrapLines: boolean
@@ -1605,6 +1639,7 @@ function DiffFileCard({
             <div className="flex min-w-0 items-center">
               <StageCheckbox
                 checked={isChecked}
+                label={checkboxLabel}
                 onClick={onToggleChecked}
               />
               <div className="min-w-0 truncate select-none ml-2 mr-1">{file.path}</div>
@@ -1702,38 +1737,42 @@ function DiffFileCard({
           <FolderOpen className="h-3.5 w-3.5" />
           <span className="text-xs font-medium">Open in Finder</span>
         </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={(event) => {
-            event.stopPropagation()
-            fileActions.onDiscardFile(file.path)
-          }}
-          className="text-destructive dark:text-red-400 hover:bg-destructive/10 focus:bg-destructive/10 dark:hover:bg-red-500/20 dark:focus:bg-red-500/20"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Discard Changes</span>
-        </ContextMenuItem>
-        <ContextMenuItem
-          disabled={!canIgnore}
-          onSelect={(event) => {
-            event.stopPropagation()
-            if (!canIgnore) return
-            fileActions.onIgnoreFile(file.path)
-          }}
-        >
-          <Ban className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Ignore File</span>
-        </ContextMenuItem>
-        <ContextMenuItem
-          disabled={!canIgnoreFolder}
-          onSelect={(event) => {
-            event.stopPropagation()
-            if (!canIgnoreFolder) return
-            fileActions.onIgnoreFolder(file.path)
-          }}
-        >
-          <Ban className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Ignore folder...</span>
-        </ContextMenuItem>
+        {enableWorktreeActions ? (
+          <>
+            <ContextMenuItem
+              onSelect={(event) => {
+                event.stopPropagation()
+                fileActions.onDiscardFile(file.path)
+              }}
+              className="text-destructive dark:text-red-400 hover:bg-destructive/10 focus:bg-destructive/10 dark:hover:bg-red-500/20 dark:focus:bg-red-500/20"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">Discard Changes</span>
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={!canIgnore}
+              onSelect={(event) => {
+                event.stopPropagation()
+                if (!canIgnore) return
+                fileActions.onIgnoreFile(file.path)
+              }}
+            >
+              <Ban className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">Ignore File</span>
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={!canIgnoreFolder}
+              onSelect={(event) => {
+                event.stopPropagation()
+                if (!canIgnoreFolder) return
+                fileActions.onIgnoreFolder(file.path)
+              }}
+            >
+              <Ban className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">Ignore folder...</span>
+            </ContextMenuItem>
+          </>
+        ) : null}
         <ContextMenuSeparator />
         <ContextMenuItem
           onSelect={(event) => {
@@ -1800,20 +1839,37 @@ function RightSidebarImpl({
     onCopyFilePath,
     onCopyRelativePath,
   }), [onOpenFile, onOpenInFinder, onDiscardFile, onIgnoreFile, onIgnoreFolder, onCopyFilePath, onCopyRelativePath])
-  const hasChanges = diffs.files.length > 0
+  const defaultBranchComparison = diffs.defaultBranchComparison
+  const defaultBranchComparisonFiles = defaultBranchComparison?.status === "ready" ? defaultBranchComparison.files : []
   const [isGenerating, setIsGenerating] = useState(false)
   const [commitModeInFlight, setCommitModeInFlight] = useState<DiffCommitMode | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isGitHubPublishModalOpen, setIsGitHubPublishModalOpen] = useState(false)
   const [allowMultipleDiffPanels, setAllowMultipleDiffPanels] = useState(false)
+  const [diffComparisonMode, setDiffComparisonMode] = useState<DiffComparisonMode>(() => (
+    diffs.files.length === 0 && defaultBranchComparisonFiles.length > 0
+      ? "default_branch"
+      : DEFAULT_DIFF_COMPARISON_MODE
+  ))
   const [diffPanelVisibility, setDiffPanelVisibility] = useState<Record<DiffPanelKey, boolean>>(DEFAULT_DIFF_PANEL_VISIBILITY)
   const [patchesByPath, setPatchesByPath] = useState<Record<string, string>>({})
   const [patchErrorsByPath, setPatchErrorsByPath] = useState<Record<string, string>>({})
   const [loadingPatchPaths, setLoadingPatchPaths] = useState<Record<string, boolean>>({})
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const rawPanelScrollRef = useRef<HTMLDivElement | null>(null)
   const patchDigestsByPathRef = useRef<Record<string, string>>({})
   const autoAnalysisRequestKeysRef = useRef<Set<string>>(new Set())
-  const filePaths = useMemo(() => diffs.files.map((file) => file.path), [diffs.files])
+  const activeDiffFiles = diffComparisonMode === "default_branch" ? defaultBranchComparisonFiles : diffs.files
+  const activeDiffUnavailableMessage = diffComparisonMode === "default_branch" && defaultBranchComparison?.status === "unavailable"
+    ? defaultBranchComparison.message ?? "Default branch comparison is unavailable."
+    : null
+  const hasChanges = diffs.files.length > 0 || defaultBranchComparisonFiles.length > 0
+  const hasActiveDiffFiles = activeDiffFiles.length > 0
+  const defaultBranchLabel = defaultBranchComparison?.baseBranchName ?? diffs.defaultBranchName ?? "main"
+  const comparisonDescription = diffComparisonMode === "default_branch"
+    ? `${diffs.branchName ?? "current branch"} vs ${defaultBranchLabel}`
+    : "Local worktree changes"
+  const filePaths = useMemo(() => activeDiffFiles.map((file) => file.path), [activeDiffFiles])
   const filePathsKey = useMemo(() => filePaths.join("\u0000"), [filePaths])
   const viewMode = useRightSidebarStore((store) => (projectId ? (store.projectUi[projectId]?.viewMode ?? (hasChanges ? "changes" : "history")) : (hasChanges ? "changes" : "history")))
   const collapsedPaths = useRightSidebarStore((store) => (projectId ? (store.projectUi[projectId]?.collapsedPaths ?? EMPTY_CHECKED_PATHS) : EMPTY_CHECKED_PATHS))
@@ -1831,20 +1887,36 @@ function RightSidebarImpl({
   const previousHasChangesRef = useRef(hasChanges)
 
   useEffect(() => {
+    if (diffComparisonMode !== "default_branch") return
+    if (diffs.status === "ready" && defaultBranchComparison) return
+    setDiffComparisonMode(DEFAULT_DIFF_COMPARISON_MODE)
+  }, [defaultBranchComparison, diffComparisonMode, diffs.status])
+
+  useEffect(() => {
+    if (diffComparisonMode !== "working_tree") return
+    if (diffs.files.length > 0 || defaultBranchComparisonFiles.length === 0) return
+    setDiffComparisonMode("default_branch")
+  }, [defaultBranchComparisonFiles.length, diffComparisonMode, diffs.files.length])
+
+  useEffect(() => {
     if (!projectId) return
     reconcileCollapsedPaths(projectId, filePaths)
   }, [filePaths, filePathsKey, projectId, reconcileCollapsedPaths])
 
   useEffect(() => {
-    const nextDigestsByPath = Object.fromEntries(diffs.files.map((file) => [file.path, file.patchDigest]))
-    const isCurrentDigest = (path: string) => patchDigestsByPathRef.current[path] === nextDigestsByPath[path]
+    const nextDigestsByPath = Object.fromEntries(activeDiffFiles.map((file) => [
+      createDiffPatchCacheKey(diffComparisonMode, file.path),
+      file.patchDigest,
+    ]))
+    const activeKeys = new Set(Object.keys(nextDigestsByPath))
+    const isCurrentDigest = (key: string) => patchDigestsByPathRef.current[key] === nextDigestsByPath[key]
     setPatchesByPath((current) => Object.fromEntries(
-      Object.entries(current).filter(([path]) => filePaths.includes(path) && isCurrentDigest(path))
+      Object.entries(current).filter(([key]) => activeKeys.has(key) && isCurrentDigest(key))
     ))
-    setPatchErrorsByPath((current) => Object.fromEntries(Object.entries(current).filter(([path]) => filePaths.includes(path) && isCurrentDigest(path))))
-    setLoadingPatchPaths((current) => Object.fromEntries(Object.entries(current).filter(([path]) => filePaths.includes(path) && isCurrentDigest(path))))
+    setPatchErrorsByPath((current) => Object.fromEntries(Object.entries(current).filter(([key]) => activeKeys.has(key) && isCurrentDigest(key))))
+    setLoadingPatchPaths((current) => Object.fromEntries(Object.entries(current).filter(([key]) => activeKeys.has(key) && isCurrentDigest(key))))
     patchDigestsByPathRef.current = nextDigestsByPath
-  }, [diffs.files, filePaths, filePathsKey])
+  }, [activeDiffFiles, diffComparisonMode, filePathsKey])
 
   useEffect(() => {
     if (!projectId) return
@@ -1863,12 +1935,12 @@ function RightSidebarImpl({
   }, [hasChanges, projectId, setViewMode])
 
   const selectedPaths = useMemo(
-    () => diffs.files.filter((file) => checkedPaths[file.path] ?? true).map((file) => file.path),
-    [checkedPaths, diffs.files]
+    () => activeDiffFiles.filter((file) => checkedPaths[file.path] ?? true).map((file) => file.path),
+    [activeDiffFiles, checkedPaths]
   )
   const selectedCount = selectedPaths.length
-  const allSelected = diffs.files.length > 0 && selectedCount === diffs.files.length
-  const someSelected = selectedCount > 0 && selectedCount < diffs.files.length
+  const allSelected = activeDiffFiles.length > 0 && selectedCount === activeDiffFiles.length
+  const someSelected = selectedCount > 0 && selectedCount < activeDiffFiles.length
   const trimmedSummary = summary.trim()
   const hasSummary = trimmedSummary.length > 0
   const isCommitting = commitModeInFlight !== null
@@ -1896,18 +1968,20 @@ function RightSidebarImpl({
     && diffs.branchName
     && diffs.branchName !== diffs.defaultBranchName
   )
-  const canGenerate = diffs.status === "ready"
+  const canGenerate = diffComparisonMode === "working_tree"
+    && diffs.status === "ready"
     && selectedCount > 0
     && !isBusy
-  const canCommit = diffs.status === "ready"
+  const canCommit = diffComparisonMode === "working_tree"
+    && diffs.status === "ready"
     && selectedCount > 0
     && hasSummary
     && !isBusy
   const primaryCommitMode: DiffCommitMode = hasRemoteOrigin ? "commit_and_push" : "commit_only"
   const resolvedBranchName = diffs.branchName ?? "current branch"
   const currentAnalysisRequestKey = useMemo(
-    () => selectedPaths.length > 0 ? createDiffAnalysisRequestKey(diffs.files, selectedPaths) : null,
-    [diffs.files, selectedPaths]
+    () => selectedPaths.length > 0 ? createDiffAnalysisRequestKey(activeDiffFiles, selectedPaths, diffComparisonMode) : null,
+    [activeDiffFiles, diffComparisonMode, selectedPaths]
   )
   const analysisRunning = isAnalysisRunning(diffAnalysis)
   const analysisIsStale = Boolean(diffAnalysis?.requestKey && currentAnalysisRequestKey && diffAnalysis.requestKey !== currentAnalysisRequestKey)
@@ -1928,8 +2002,10 @@ function RightSidebarImpl({
     }
 
     autoAnalysisRequestKeysRef.current.add(autoAnalysisKey)
-    void onAnalyzeDiff(selectedPaths)
-  }, [analysisRunning, autoAnalysisKey, currentAnalysisRequestKey, diffAnalysis?.requestKey, diffs.status, onAnalyzeDiff, selectedPaths, viewMode])
+    void onAnalyzeDiff({ paths: selectedPaths, comparisonMode: diffComparisonMode }).catch(() => {
+      autoAnalysisRequestKeysRef.current.delete(autoAnalysisKey)
+    })
+  }, [analysisRunning, autoAnalysisKey, currentAnalysisRequestKey, diffAnalysis?.requestKey, diffComparisonMode, diffs.status, onAnalyzeDiff, selectedPaths, viewMode])
 
   async function handleCommit(mode: DiffCommitMode) {
     if (!canCommit) return
@@ -1968,7 +2044,7 @@ function RightSidebarImpl({
   }
 
   function handleAnalyzeSelectedDiff() {
-    void onAnalyzeDiff(selectedPaths)
+    void onAnalyzeDiff({ paths: selectedPaths, comparisonMode: diffComparisonMode })
   }
 
   function handleCancelSelectedDiffAnalysis() {
@@ -1998,39 +2074,40 @@ function RightSidebarImpl({
   }
 
   const handleLoadPatch = useCallback(async (path: string) => {
-    if (patchesByPath[path] !== undefined || loadingPatchPaths[path]) {
-      return patchesByPath[path] ?? ""
+    const cacheKey = createDiffPatchCacheKey(diffComparisonMode, path)
+    if (patchesByPath[cacheKey] !== undefined || loadingPatchPaths[cacheKey]) {
+      return patchesByPath[cacheKey] ?? ""
     }
 
-    setLoadingPatchPaths((current) => ({ ...current, [path]: true }))
+    setLoadingPatchPaths((current) => ({ ...current, [cacheKey]: true }))
     setPatchErrorsByPath((current) => {
-      if (!(path in current)) return current
-      const { [path]: _removed, ...rest } = current
+      if (!(cacheKey in current)) return current
+      const { [cacheKey]: _removed, ...rest } = current
       return rest
     })
 
     try {
-      const patch = await onLoadPatch(path)
-      setPatchesByPath((current) => ({ ...current, [path]: patch }))
-      const digest = diffs.files.find((file) => file.path === path)?.patchDigest
+      const patch = await onLoadPatch({ path, comparisonMode: diffComparisonMode })
+      setPatchesByPath((current) => ({ ...current, [cacheKey]: patch }))
+      const digest = activeDiffFiles.find((file) => file.path === path)?.patchDigest
       if (digest) {
         patchDigestsByPathRef.current = {
           ...patchDigestsByPathRef.current,
-          [path]: digest,
+          [cacheKey]: digest,
         }
       }
       return patch
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      setPatchErrorsByPath((current) => ({ ...current, [path]: message }))
+      setPatchErrorsByPath((current) => ({ ...current, [cacheKey]: message }))
       throw error
     } finally {
       setLoadingPatchPaths((current) => {
-        const { [path]: _removed, ...rest } = current
+        const { [cacheKey]: _removed, ...rest } = current
         return rest
       })
     }
-  }, [diffs.files, loadingPatchPaths, onLoadPatch, patchesByPath])
+  }, [activeDiffFiles, diffComparisonMode, loadingPatchPaths, onLoadPatch, patchesByPath])
 
   const visibleDiffPanelKeys = DIFF_PANEL_OPTIONS
     .filter((panel) => diffPanelVisibility[panel.value])
@@ -2038,18 +2115,23 @@ function RightSidebarImpl({
   const visiblePanelCount = visibleDiffPanelKeys.length
   const showInlineDiffControls = viewMode === "changes" && diffPanelVisibility.raw
 
-  function renderDiffFile(file: DiffFile) {
+  function renderDiffFile(file: DiffFile, rootRef: RefObject<HTMLDivElement | null> = scrollContainerRef) {
     const isCollapsed = collapsedPaths[file.path] ?? true
     const isChecked = checkedPaths[file.path] ?? true
+    const patchCacheKey = createDiffPatchCacheKey(diffComparisonMode, file.path)
 
     return (
       <DiffFileCard
         key={file.path}
         file={file}
-        rootRef={scrollContainerRef}
+        rootRef={rootRef}
         projectId={projectId}
         isCollapsed={isCollapsed}
         isChecked={isChecked}
+        checkboxLabel={diffComparisonMode === "default_branch"
+          ? (isChecked ? "Exclude file from analysis" : "Include file in analysis")
+          : undefined}
+        enableWorktreeActions={diffComparisonMode === "working_tree"}
         editorLabel={editorLabel}
         diffRenderMode={diffRenderMode}
         wrapLines={wrapLines}
@@ -2062,9 +2144,9 @@ function RightSidebarImpl({
           setCheckedPath(projectId, file.path, !isChecked)
         }}
         fileActions={fileActions}
-        patch={patchesByPath[file.path]}
-        patchError={patchErrorsByPath[file.path]}
-        isPatchLoading={Boolean(loadingPatchPaths[file.path])}
+        patch={patchesByPath[patchCacheKey]}
+        patchError={patchErrorsByPath[patchCacheKey]}
+        isPatchLoading={Boolean(loadingPatchPaths[patchCacheKey])}
         onLoadPatch={handleLoadPatch}
       />
     )
@@ -2212,18 +2294,42 @@ function RightSidebarImpl({
                       checked={allSelected}
                       mixed={someSelected}
                       label={
-                        someSelected
-                          ? "Select all files for commit"
-                          : allSelected
-                            ? "Unselect all files from commit"
-                            : "Select all files for commit"
+                        diffComparisonMode === "default_branch"
+                          ? (someSelected
+                            ? "Select all files for analysis"
+                            : allSelected
+                              ? "Unselect all files from analysis"
+                              : "Select all files for analysis")
+                          : (someSelected
+                            ? "Select all files for commit"
+                            : allSelected
+                              ? "Unselect all files from commit"
+                              : "Select all files for commit")
                       }
                       onClick={() => {
-                        if (!projectId || diffs.files.length === 0) return
+                        if (!projectId || activeDiffFiles.length === 0) return
                         setAllCheckedPaths(projectId, filePaths, someSelected ? true : !allSelected)
                       }}
                     />
                     <span>{selectedCount} files</span>
+                    <SegmentedControl<DiffComparisonMode>
+                      value={diffComparisonMode}
+                      onValueChange={setDiffComparisonMode}
+                      size="sm"
+                      className="ml-1"
+                      optionClassName="px-2 py-0.5 text-[11px]"
+                      options={[
+                        { value: "working_tree", label: "Local" },
+                        {
+                          value: "default_branch",
+                          label: defaultBranchLabel,
+                          disabled: diffs.status !== "ready" || !defaultBranchComparison,
+                          tooltip: defaultBranchComparison?.status === "unavailable"
+                            ? defaultBranchComparison.message
+                            : `Compare ${diffs.branchName ?? "current branch"} with ${defaultBranchLabel}`,
+                        },
+                      ]}
+                    />
                   </div>
                 ) : <div />}
                 <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2">
@@ -2272,7 +2378,7 @@ function RightSidebarImpl({
                 </div>
               </div>
             </div>
-            {viewMode === "changes" && diffs.files.length > 0 ? (
+            {viewMode === "changes" && (hasActiveDiffFiles || activeDiffUnavailableMessage) ? (
               <div className="mt-1 flex flex-wrap items-center justify-end gap-1.5">
                 <DiffAnalysisToolbarAction
                   analysis={diffAnalysis}
@@ -2314,7 +2420,13 @@ function RightSidebarImpl({
               </div>
             ) : null}
           </div>
-          <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]">
+          <div
+            ref={scrollContainerRef}
+            className={cn(
+              "min-h-0 flex-1 [scrollbar-gutter:stable]",
+              allowMultipleDiffPanels ? "overflow-hidden" : "overflow-auto"
+            )}
+          >
             {diffs.status === "no_repo" ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
                 <div className="flex max-w-[280px] flex-col items-center gap-3">
@@ -2334,36 +2446,57 @@ function RightSidebarImpl({
                   {branchHistory.map((entry, index) => <CommitHistoryRow key={entry.sha} entry={entry} isPendingPush={index < aheadCount} />)}
                 </div>
               )
-            ) : diffs.files.length === 0 ? (
+            ) : activeDiffUnavailableMessage ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
-                <p className="text-sm text-muted-foreground">No file changes.</p>
+                <p className="max-w-[320px] text-sm text-muted-foreground">{activeDiffUnavailableMessage}</p>
+              </div>
+            ) : !hasActiveDiffFiles ? (
+              <div className="flex h-full items-center justify-center px-6 py-3 text-center">
+                <p className="text-sm text-muted-foreground">
+                  {diffComparisonMode === "default_branch"
+                    ? `No changes between ${diffs.branchName ?? "current branch"} and ${defaultBranchLabel}.`
+                    : "No file changes."}
+                </p>
               </div>
             ) : (
-              <div className="p-1.5">
+              <div className={cn("p-1.5", allowMultipleDiffPanels && "h-full min-h-0")}>
                 {visiblePanelCount === 0 ? (
                   <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                     All diff views are collapsed.
                   </div>
                 ) : (
-                  <div className="pb-2">
+                  <div className={cn("pb-2", allowMultipleDiffPanels && "h-full min-h-0 pb-0")}>
                     <div
                       className={cn(
-                        "grid items-start gap-3",
+                        "grid gap-3",
+                        allowMultipleDiffPanels ? "h-full min-h-0 items-stretch" : "items-start",
                         visiblePanelCount === 1 && "grid-cols-1",
                         visiblePanelCount === 2 && "grid-cols-2",
                         visiblePanelCount >= 3 && "grid-cols-3"
                       )}
                     >
                       {diffPanelVisibility.raw ? (
-                        <section className="min-w-0 rounded-xl border border-border bg-background">
-                          <div className="sticky top-0 z-10 border-b border-border bg-background px-3 py-2">
+                        <section className={cn(
+                          "min-w-0 rounded-xl border border-border bg-background",
+                          allowMultipleDiffPanels && "flex h-full min-h-0 flex-col overflow-hidden"
+                        )}>
+                          <div className={cn(
+                            "border-b border-border bg-background px-3 py-2",
+                            allowMultipleDiffPanels ? "shrink-0" : "sticky top-0 z-10"
+                          )}>
                             <div>
                               <div className="text-sm font-medium text-foreground">Raw Diff</div>
-                              <div className="text-[11px] text-muted-foreground">Traditional file-by-file view</div>
+                              <div className="text-[11px] text-muted-foreground">{comparisonDescription}</div>
                             </div>
                           </div>
-                          <div className="space-y-1.5 p-2">
-                            {diffs.files.map((file) => renderDiffFile(file))}
+                          <div
+                            ref={allowMultipleDiffPanels ? rawPanelScrollRef : undefined}
+                            className={cn(
+                              "flex flex-col gap-1.5 p-2",
+                              allowMultipleDiffPanels && "min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]"
+                            )}
+                          >
+                            {activeDiffFiles.map((file) => renderDiffFile(file, allowMultipleDiffPanels ? rawPanelScrollRef : scrollContainerRef))}
                           </div>
                         </section>
                       ) : null}
@@ -2373,6 +2506,7 @@ function RightSidebarImpl({
                           analysis={diffAnalysis}
                           selectedPaths={selectedPaths}
                           currentRequestKey={currentAnalysisRequestKey}
+                          scrollable={allowMultipleDiffPanels}
                         />
                       ) : null}
 
@@ -2381,6 +2515,7 @@ function RightSidebarImpl({
                           analysis={diffAnalysis}
                           selectedPaths={selectedPaths}
                           currentRequestKey={currentAnalysisRequestKey}
+                          scrollable={allowMultipleDiffPanels}
                         />
                       ) : null}
 
@@ -2389,6 +2524,7 @@ function RightSidebarImpl({
                           analysis={diffAnalysis}
                           selectedPaths={selectedPaths}
                           currentRequestKey={currentAnalysisRequestKey}
+                          scrollable={allowMultipleDiffPanels}
                         />
                       ) : null}
                     </div>
@@ -2397,7 +2533,7 @@ function RightSidebarImpl({
               </div>
             )}
           </div>
-          {viewMode === "changes" && diffs.files.length > 0 ? (
+          {viewMode === "changes" && diffComparisonMode === "working_tree" && diffs.files.length > 0 ? (
             <div className="shrink-0 border-t border-border bg-background p-2">
               <div className="mx-auto max-w-[700px] space-y-0 rounded-xl">
                 <Input

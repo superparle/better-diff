@@ -8,7 +8,7 @@ import {
 import { parseUnifiedDiffHunks } from "../shared/diff-analysis-hunks"
 import { parseAgentResponse } from "../shared/diff-analysis-parser"
 import { computeDiffStats } from "../shared/diff-analysis-stats"
-import { DEFAULT_OPENAI_SDK_MODEL } from "../shared/types"
+import { DEFAULT_OPENAI_SDK_MODEL, type ChatDiffSnapshot, type DiffComparisonMode } from "../shared/types"
 import { CodexAppServerManager } from "./codex-app-server"
 import type { HarnessTurn } from "./harness-types"
 import type { DiffStore } from "./diff-store"
@@ -23,6 +23,17 @@ interface ActiveAnalysis {
   chatId: string
   turn?: HarnessTurn
   cancelled?: boolean
+}
+
+function getDiffFilesForAnalysis(snapshot: ChatDiffSnapshot, comparisonMode: DiffComparisonMode) {
+  if (comparisonMode === "default_branch") {
+    if (snapshot.defaultBranchComparison?.status === "unavailable") {
+      throw new Error(snapshot.defaultBranchComparison.message ?? "Default branch comparison is unavailable.")
+    }
+    return snapshot.defaultBranchComparison?.files ?? []
+  }
+
+  return snapshot.files
 }
 
 export interface DiffAnalysisStoreArgs {
@@ -53,11 +64,13 @@ export class DiffAnalysisStore {
     projectId: string
     projectPath: string
     paths: string[]
+    comparisonMode?: DiffComparisonMode
   }) {
     if (this.active.has(args.projectId)) {
       throw new Error("A diff analysis is already running.")
     }
 
+    const comparisonMode = args.comparisonMode ?? "working_tree"
     const selectedPaths = [...new Set(args.paths)].sort((left, right) => left.localeCompare(right))
     if (selectedPaths.length === 0) {
       throw new Error("Select at least one file to analyze")
@@ -71,15 +84,18 @@ export class DiffAnalysisStore {
         : "Diffs are not ready yet")
     }
 
-    const fileByPath = new Map(diffSnapshot.files.map((file) => [file.path, file]))
+    const analysisFiles = getDiffFilesForAnalysis(diffSnapshot, comparisonMode)
+    const fileByPath = new Map(analysisFiles.map((file) => [file.path, file]))
     const missingPath = selectedPaths.find((path) => !fileByPath.has(path))
     if (missingPath) {
-      throw new Error(`File is no longer changed: ${missingPath}`)
+      throw new Error(comparisonMode === "default_branch"
+        ? `File is not changed against ${diffSnapshot.defaultBranchComparison?.baseBranchName ?? "main"}: ${missingPath}`
+        : `File is no longer changed: ${missingPath}`)
     }
 
     const runId = randomUUID()
     const chatId = `diff-analysis-${args.projectId}`
-    const requestKey = createDiffAnalysisRequestKey(diffSnapshot.files, selectedPaths)
+    const requestKey = createDiffAnalysisRequestKey(analysisFiles, selectedPaths, comparisonMode)
     this.active.set(args.projectId, { runId, chatId })
     this.itemBuffersByRun.set(runId, new Map())
     this.patchState(args.projectId, {
@@ -100,6 +116,7 @@ export class DiffAnalysisStore {
       projectId: args.projectId,
       projectPath: args.projectPath,
       selectedPaths,
+      comparisonMode,
       runId,
     })
   }
@@ -135,6 +152,7 @@ export class DiffAnalysisStore {
     projectId: string
     projectPath: string
     selectedPaths: string[]
+    comparisonMode: DiffComparisonMode
     runId: string
   }) {
     const chatId = `diff-analysis-${args.projectId}`
@@ -147,6 +165,7 @@ export class DiffAnalysisStore {
         projectPath: args.projectPath,
         paths: args.selectedPaths,
         contextLines: VIEWER_DIFF_CONTEXT_LINES,
+        comparisonMode: args.comparisonMode,
       })
       const rawDiff = patchResult.patch
       const sourceBlocks = parseUnifiedDiffHunks(rawDiff, {

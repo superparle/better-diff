@@ -582,7 +582,7 @@ describe("ws-router", () => {
     })
   })
 
-  test("routes diff analysis commands through the analysis store", async () => {
+  test("routes project diff analysis commands through the analysis store", async () => {
     const state = createEmptyState()
     state.projectsById.set("project-1", {
       id: "project-1",
@@ -662,7 +662,7 @@ describe("ws-router", () => {
         v: 1,
         type: "command",
         id: "analyze-1",
-        command: { type: "chat.analyzeDiff", chatId: "chat-1", paths: ["app.txt"] },
+        command: { type: "project.analyzeDiff", projectId: "project-1", paths: ["app.txt"] },
       })
     )
     await router.handleMessage(
@@ -671,7 +671,7 @@ describe("ws-router", () => {
         v: 1,
         type: "command",
         id: "cancel-analysis-1",
-        command: { type: "chat.cancelDiffAnalysis", chatId: "chat-1" },
+        command: { type: "project.cancelDiffAnalysis", projectId: "project-1" },
       })
     )
 

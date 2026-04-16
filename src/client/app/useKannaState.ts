@@ -88,6 +88,22 @@ function sameQueuedMessages(left: ChatSnapshot["queuedMessages"] | null | undefi
   return left.every((message, index) => sameQueuedMessage(message, right[index]!))
 }
 
+function sameDiffFiles(left: ChatDiffSnapshot["files"], right: ChatDiffSnapshot["files"]) {
+  if (left.length !== right.length) return false
+  return left.every((file, index) => {
+    const other = right[index]
+    return Boolean(other)
+      && file.path === other.path
+      && file.changeType === other.changeType
+      && file.isUntracked === other.isUntracked
+      && file.additions === other.additions
+      && file.deletions === other.deletions
+      && file.patchDigest === other.patchDigest
+      && file.mimeType === other.mimeType
+      && file.size === other.size
+  })
+}
+
 function sameDiffs(left: ChatDiffSnapshot | null | undefined, right: ChatDiffSnapshot | null | undefined) {
   if (left === right) return true
   if (!left || !right) return false
@@ -116,19 +132,19 @@ function sameDiffs(left: ChatDiffSnapshot | null | undefined, right: ChatDiffSna
       && entry.tags.every((tag, tagIndex) => tag === other.tags[tagIndex])
   })
   if (!sameBranchHistory) return false
-  if (left.files.length !== right.files.length) return false
-  return left.files.every((file, index) => {
-    const other = right.files[index]
-    return Boolean(other)
-      && file.path === other.path
-      && file.changeType === other.changeType
-      && file.isUntracked === other.isUntracked
-      && file.additions === other.additions
-      && file.deletions === other.deletions
-      && file.patchDigest === other.patchDigest
-      && file.mimeType === other.mimeType
-      && file.size === other.size
-  })
+  const leftComparison = left.defaultBranchComparison
+  const rightComparison = right.defaultBranchComparison
+  if (leftComparison || rightComparison) {
+    if (!leftComparison || !rightComparison) return false
+    if (leftComparison.mode !== rightComparison.mode) return false
+    if (leftComparison.status !== rightComparison.status) return false
+    if (leftComparison.baseBranchName !== rightComparison.baseBranchName) return false
+    if (leftComparison.baseRef !== rightComparison.baseRef) return false
+    if (leftComparison.headBranchName !== rightComparison.headBranchName) return false
+    if (leftComparison.message !== rightComparison.message) return false
+    if (!sameDiffFiles(leftComparison.files, rightComparison.files)) return false
+  }
+  return sameDiffFiles(left.files, right.files)
 }
 
 function shouldPreserveExistingProjectDiffs(

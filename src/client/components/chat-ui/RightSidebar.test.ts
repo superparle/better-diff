@@ -133,6 +133,38 @@ describe("RightSidebar", () => {
     expect(markup).not.toContain("Publish Branch")
   })
 
+  test("shows default branch comparison when it is the only diff", () => {
+    const markup = renderRightSidebar({
+      diffs: {
+        status: "ready",
+        branchName: "feature/current",
+        defaultBranchName: "main",
+        files: [],
+        defaultBranchComparison: {
+          mode: "default_branch",
+          status: "ready",
+          baseBranchName: "main",
+          baseRef: "main",
+          headBranchName: "feature/current",
+          files: [{
+            path: "src/branch-only.ts",
+            changeType: "modified",
+            isUntracked: false,
+            additions: 3,
+            deletions: 1,
+            patchDigest: "branch-digest",
+          }],
+        },
+        branchHistory: { entries: [] },
+      },
+    })
+
+    expect(markup).toContain("src/branch-only.ts")
+    expect(markup).toContain("feature/current vs main")
+    expect(markup).not.toContain("Commit message")
+    expect(markup).not.toContain("Discard Changes")
+  })
+
   test("renders stale analysis affordance when the diff no longer matches", () => {
     const files: RightSidebarProps["diffs"]["files"] = [{
       path: "src/model.ts",
