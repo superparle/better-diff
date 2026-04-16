@@ -87,6 +87,62 @@ Recommended first behavior:
 - If all files are selected, the analysis is effectively for the full current diff.
 - Invalidate or mark the analysis stale when any analyzed file's `patchDigest` changes.
 
+## Requested UX Revision
+
+The integrated sidebar should now use tab-first diff navigation instead of treating every panel as an independent toggle.
+
+### Diff View Tabs
+
+Replace the existing `Raw`, `AI`, and `Summary` independent toggles with tabs:
+
+- `Raw`
+- `Reordered`
+- `Natural Language`
+- `Summary`
+
+Default behavior:
+
+- Only one tab is visible at a time.
+- Clicking a tab switches to that tab and hides the others.
+- Keep a simple `Multi` toggle beside the tabs for side-by-side review.
+- Add spacing after `Multi` so it reads as a separate mode switch, not another diff tab.
+- When `Multi` is off, selecting a tab collapses back to a single visible panel.
+- When `Multi` is on, tab buttons can toggle multiple visible panels, but at least one panel should remain visible.
+
+### Split AI Output
+
+The old `AI` panel should become two separate views:
+
+- `Reordered`: show only the diff hunk cards in Codex's reordered sequence. Do not show natural-language descriptions in this view.
+- `Natural Language`: show the one-sentence description for each hunk, in the same reordered sequence. Do not repeat the diff content here.
+
+`Summary` should focus on the overall generated summary instead of duplicating the per-hunk descriptions.
+
+Do not call reordered hunks `steps` or `hunks` in the UI. Label them as `Block 1`, `Block 2`, etc., and avoid repeating the generated trailing `block N` suffix in each source title.
+
+### Analysis Triggering And Staleness
+
+Remove the per-panel `Analyze` buttons from the reordered, natural-language, and summary views.
+
+New behavior:
+
+- When the user enters the Changes/diff view with selected files and no analysis for the current request key, start analysis automatically.
+- The one analysis run generates all derived views: reordered hunks, natural-language descriptions, and summary.
+- If selected files or their patch digests change after analysis, mark the generated result as stale instead of auto-rerunning.
+- Show one yellow `Stale` button in the diff toolbar for stale results.
+- On hover, the stale button should read `Analyze`; clicking it reruns analysis for the current selected files.
+- While analysis is running, show a compact global running/cancel affordance in the toolbar rather than panel-level analyze buttons.
+
+### Commit Form Placement
+
+The commit message and description inputs should be pinned to the bottom of the right sidebar, outside the scrollable diff content.
+
+Requirements:
+
+- The diff panels should scroll independently above the commit form.
+- The commit form should no longer float in the middle of the pane with a gradient overlay.
+- Keep the existing generate/commit behavior and context-menu `Commit Only` fallback.
+
 ## Data Model
 
 Add shared types in a new file, likely `src/shared/diff-analysis.ts`.

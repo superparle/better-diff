@@ -121,16 +121,19 @@ describe("RightSidebar", () => {
 
     expect(markup).toContain("src/app.ts")
     expect(markup).toContain("Raw Diff")
-    expect(markup).toContain("AI Order")
+    expect(markup).toContain("Reordered")
+    expect(markup).toContain("Natural Language")
     expect(markup).toContain("Summary")
-    expect(markup).toContain("Run analysis to see reordered change blocks.")
+    expect(markup).toContain("Multi")
+    expect(markup).not.toContain("AI Order")
+    expect(markup).not.toContain("bg-gradient-to-t")
     expect(markup).toContain("Open branch switcher")
     expect(markup).toContain("Pull")
     expect(markup).toContain("3")
     expect(markup).not.toContain("Publish Branch")
   })
 
-  test("renders real AI analysis notes", () => {
+  test("renders stale analysis affordance when the diff no longer matches", () => {
     const files: RightSidebarProps["diffs"]["files"] = [{
       path: "src/model.ts",
       changeType: "modified",
@@ -139,7 +142,10 @@ describe("RightSidebar", () => {
       deletions: 1,
       patchDigest: "digest-model",
     }]
-    const requestKey = createDiffAnalysisRequestKey(files, ["src/model.ts"])
+    const requestKey = createDiffAnalysisRequestKey([{
+      ...files[0]!,
+      patchDigest: "old-digest",
+    }], ["src/model.ts"])
     const markup = renderRightSidebar({
       diffs: {
         status: "ready",
@@ -192,12 +198,11 @@ describe("RightSidebar", () => {
       },
     })
 
-    expect(markup).toContain("Analysis complete")
-    expect(markup).toContain("H001 src/model.ts")
-    expect(markup).toContain("Updates the model contract before downstream consumers use it.")
-    expect(markup).toContain("The model contract changes and should be reviewed before dependent code.")
-    expect(markup).toContain("-old")
-    expect(markup).toContain("+new")
+    expect(markup).toContain("Stale")
+    expect(markup).toContain("Analyze")
+    expect(markup).toContain("Reordered")
+    expect(markup).toContain("Natural Language")
+    expect(markup).toContain("Summary")
   })
 
   test("renders the branch switcher affordance", () => {
