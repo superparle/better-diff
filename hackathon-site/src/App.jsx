@@ -2,7 +2,7 @@ import './App.css'
 
 const painPoints = [
   'large diff block and its just formatter things, but interleaved with important small changes that i might miss',
-  'i have to jump around multiple parts of the diff since diffs are alphabetically ordered by file name, not diff blocks by the execution flow they appear',
+  'i have to jump around multiple parts of the diff since diffs are alpahbetically ordered by file name, not diff blocks by the execution flow they appear',
   'fatigue creeps in by just seeing a 2000 line change to comb through',
 ]
 
@@ -10,40 +10,34 @@ const workflow = [
   {
     step: '1',
     title: 'i treat each diff block as my unit',
-    description:
-      'instead of treating the file as the thing to review, i treat each diff block as the thing i can inspect, skim, or ignore.',
     image:
       'https://github.com/user-attachments/assets/c2bdedc0-a90f-440a-80be-fac173d86570',
   },
   {
     step: '2',
-    title: 'i get the llm to rearrange it in execution / data flow order',
-    description:
-      'it splits up blocks within the files as well, so the thing i read starts to match how the change actually unfolds.',
+    title:
+      'i take diffs and get the llm to rearrange it in the execution / data flow order. (it splits up blocks within the files as well)',
     image:
       'https://github.com/user-attachments/assets/520fab22-a49b-486f-a687-cd325d01ee74',
   },
   {
     step: '3',
-    title: 'i get a one liner description for each diff',
-    description:
-      'things like "formatter changed" or "anthropic key changed to openrouter" are enough for me to know what needs scrutiny.',
+    title:
+      'then i get a one liner description for each of the diff like "formatter changed" "anthropic key changed to openrouter"',
     image:
       'https://github.com/user-attachments/assets/3aa60edd-d454-4f75-878c-e7228c56f5b9',
   },
   {
     step: '4',
-    title: 'i get a pr level or natural language description of the entire diff',
-    description:
-      'so i can start from the whole shape of the change and only drop into detail when i actually need to.',
+    title:
+      'and then i get a pr level or natural language description of the entire diff',
     image:
       'https://github.com/user-attachments/assets/033a2149-5510-4b6f-95d4-3090d15f16e9',
   },
   {
     step: '5',
-    title: 'and then i read it all the way from the bottom to top',
-    description:
-      'so that i go from the least information to detail as i need. i jump in and out of summaries, natural lang diffs, rearranged diffs, and the raw diffs.',
+    title:
+      'and read it all the way from the bottom to top, so that i go from the least information to detail as i need',
   },
 ]
 
@@ -188,14 +182,15 @@ function App() {
       <section className="section">
         <p className="intro-body">
           code review has been getting harder with the volume of code to go
-          through due to ai assisted code generation (its a good thing only).
+          through due to ai assisted code generation (its a good thing only)
+          <br />
           looking at diffs kind of became pointless. raw diffs as it is i mean.
         </p>
       </section>
 
       <section className="section statement">
         <p>
-          i have to aggressively prioritize what i should go over and what i
+          i have to aggressviely prioritize what i should go over and what i
           can just skim through these days
         </p>
       </section>
@@ -217,7 +212,7 @@ function App() {
       <section className="section statement large">
         <p>
           i have to <span className="zoom-in">zoom in</span> on things that
-          need scrutiny but brush over things that are arbitrary
+          need scrutiny but brush over things that are arbitary
         </p>
       </section>
 
@@ -234,7 +229,6 @@ function App() {
               <h2>
                 {item.step}. {item.title}
               </h2>
-              <p>{item.description}</p>
             </div>
             {item.image ? (
               <div className="demo-media">
@@ -251,23 +245,22 @@ function App() {
         ))}
       </section>
 
+      <section className="section statement">
+        <p>
+          i jump in and out out of my summaries, natural lang diffs, rearranged
+          diffs, and the raw diffs.
+        </p>
+      </section>
+
       <SketchArrow rotate={-1} />
 
       <section className="section narrow has-doodle">
         <SectionDoodle type="eye" className="float-left" />
-        <p className="eyebrow">this is the core idea</p>
-        <h2>
-          i wanted this as a core primitive in my code editor / agent workspace
-        </h2>
         <p className="body-copy">
-          the old diff view just feels slow to work with.
+          this is the core idea, and i wanted this as a core primtive in my code
+          editor / agent workspace. the old diff view just feels slow to work
+          with.
         </p>
-        <ol className="zoom-stack">
-          <li>pr level description</li>
-          <li>natural lang diffs</li>
-          <li>reordered diff blocks</li>
-          <li>raw diffs</li>
-        </ol>
       </section>
 
       <section className="section narrow has-doodle">
@@ -277,7 +270,7 @@ function App() {
           in an ideal world i can blindly rely on the ai you wouldnt need this
         </h2>
         <p className="body-copy">
-          but in places where its not there yet, i felt like there needs to be a
+          but in places where its no there yet, i felt like there needs to be a
           middle ground, and i think this is it.
         </p>
         <p className="body-copy">
@@ -297,15 +290,41 @@ function App() {
 
       <SketchArrow rotate={2} flip />
 
-      <section className="section wrap-up" id="wrap-up">
-        <p className="eyebrow">wrap up</p>
-        <h2>
+      <section className="section narrow">
+        <p className="body-copy">
+          cant this be just a skill, i think most things could be represented by
+          a instruction and a text output.
+        </p>
+        <p className="body-copy">
+          there is a seamless in and out experience i wanted and how it
+          integrates with other system
+        </p>
+        <p className="body-copy">
           text could represent this but i think its too inefficient of a
           representation and is too much detail for me to handle at once
-        </h2>
-        <p className="body-copy">
-          i like boxes hiding away detail from me.
         </p>
+        <p className="body-copy">i like boxes hiding away detail from me</p>
+      </section>
+
+      <SketchArrow rotate={-2} />
+
+      <section className="section narrow wrap-up" id="wrap-up">
+        <p className="eyebrow">dev flow</p>
+        <ul className="pain-list">
+          <li className="pain-item">we used codex for the most part obvs.</li>
+          <li className="pain-item">
+            we primarily worked on top of this ui :{' '}
+            <a href="https://github.com/jakemor/kanna">
+              github.com/jakemor/kanna
+            </a>{' '}
+            which works with codex app server part of codex cli installed
+            locally.
+          </li>
+          <li className="pain-item">
+            what we implemented is extending the diff viewer to have the the
+            phases, the llm part of it is all via the same app server.
+          </li>
+        </ul>
       </section>
 
       <footer className="footer-nav">
