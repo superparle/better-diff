@@ -34,7 +34,21 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 type DiffRenderMode = "unified" | "split"
 type DiffFile = ChatDiffSnapshot["files"][number]
 type SidebarViewMode = "changes" | "history"
+type DiffPanelKey = "raw" | "ai" | "summary"
 const EMPTY_CHECKED_PATHS: Record<string, boolean> = {}
+
+interface PrototypeAiOrderedDiffEntry {
+  file: DiffFile
+  summary: string
+  orderLabel: string
+  sortKey: number
+}
+
+const DEFAULT_DIFF_PANEL_VISIBILITY: Record<DiffPanelKey, boolean> = {
+  raw: true,
+  ai: true,
+  summary: true,
+}
 
 function getDiffPreviewAttachment(projectId: string | null, file: DiffFile): ChatAttachment | null {
   if (!projectId || !file.mimeType || typeof file.size !== "number" || file.changeType === "deleted") {
@@ -209,6 +223,56 @@ function formatFetchTooltip(isoTimestamp?: string) {
     return "No local fetch recorded"
   }
   return `Last fetched ${formatRelativeTime(isoTimestamp)}`
+}
+
+function hashDiffPath(path: string) {
+  let hash = 0
+  for (const char of path) {
+    hash = (hash * 33 + char.charCodeAt(0)) % 1_000_003
+  }
+  return hash
+}
+
+function buildPrototypeDiffSummary(file: DiffFile) {
+  const fileName = file.path.split("/").pop() ?? file.path
+  const lineDelta = file.additions > 0 || file.deletions > 0
+    ? ` (+${file.additions}/-${file.deletions})`
+    : ""
+
+  switch (file.changeType) {
+    case "added":
+      return `Introduces ${fileName} as a new piece of the flow${lineDelta}.`
+    case "deleted":
+      return `Removes ${fileName} to simplify the change set${lineDelta}.`
+    case "renamed":
+      return `Repositions ${fileName} so the story reads in a different place${lineDelta}.`
+    case "modified":
+    default:
+      return `Updates ${fileName} to reshape existing behavior${lineDelta}.`
+  }
+}
+
+export function buildPrototypeAiOrderedDiff(files: DiffFile[]): PrototypeAiOrderedDiffEntry[] {
+  return files
+    .map((file) => {
+      const sortKey = (hashDiffPath(file.path) + file.additions * 17 + file.deletions * 29 + file.changeType.length * 31) % 10_000
+      return {
+        file,
+        summary: buildPrototypeDiffSummary(file),
+        orderLabel: "",
+        sortKey,
+      }
+    })
+    .sort((left, right) => {
+      if (left.sortKey !== right.sortKey) {
+        return right.sortKey - left.sortKey
+      }
+      return left.file.path.localeCompare(right.file.path)
+    })
+    .map((entry, index) => ({
+      ...entry,
+      orderLabel: `Step ${index + 1}`,
+    }))
 }
 
 function CommitHistoryRow({ entry, isPendingPush = false }: { entry: ChatBranchHistoryEntry; isPendingPush?: boolean }) {
@@ -1413,6 +1477,7 @@ function RightSidebarImpl({
   const [commitModeInFlight, setCommitModeInFlight] = useState<DiffCommitMode | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isGitHubPublishModalOpen, setIsGitHubPublishModalOpen] = useState(false)
+  const [diffPanelVisibility, setDiffPanelVisibility] = useState<Record<DiffPanelKey, boolean>>(DEFAULT_DIFF_PANEL_VISIBILITY)
   const [patchesByPath, setPatchesByPath] = useState<Record<string, string>>({})
   const [patchErrorsByPath, setPatchErrorsByPath] = useState<Record<string, string>>({})
   const [loadingPatchPaths, setLoadingPatchPaths] = useState<Record<string, boolean>>({})
@@ -1510,6 +1575,7 @@ function RightSidebarImpl({
     && !isBusy
   const primaryCommitMode: DiffCommitMode = hasRemoteOrigin ? "commit_and_push" : "commit_only"
   const resolvedBranchName = diffs.branchName ?? "current branch"
+  const prototypeAiOrderedDiff = useMemo(() => buildPrototypeAiOrderedDiff(diffs.files), [diffs.files])
 
   async function handleCommit(mode: DiffCommitMode) {
     if (!canCommit) return
@@ -1604,8 +1670,55 @@ function RightSidebarImpl({
     }
   }, [diffs.files, loadingPatchPaths, onLoadPatch, patchesByPath])
 
+  const visiblePanelCount = Object.values(diffPanelVisibility).filter(Boolean).length
+  const showInlineDiffControls = viewMode === "changes" && (diffPanelVisibility.raw || diffPanelVisibility.ai)
+
+  function renderDiffFile(file: DiffFile) {
+    const isCollapsed = collapsedPaths[file.path] ?? true
+    const isChecked = checkedPaths[file.path] ?? true
+
+    return (
+      <DiffFileCard
+        key={file.path}
+        file={file}
+        rootRef={scrollContainerRef}
+        projectId={projectId}
+        isCollapsed={isCollapsed}
+        isChecked={isChecked}
+        editorLabel={editorLabel}
+        diffRenderMode={diffRenderMode}
+        wrapLines={wrapLines}
+        onToggleCollapsed={() => {
+          if (!projectId) return
+          toggleCollapsedPath(projectId, file.path)
+        }}
+        onToggleChecked={() => {
+          if (!projectId) return
+          setCheckedPath(projectId, file.path, !isChecked)
+        }}
+        fileActions={fileActions}
+        patch={patchesByPath[file.path]}
+        patchError={patchErrorsByPath[file.path]}
+        isPatchLoading={Boolean(loadingPatchPaths[file.path])}
+        onLoadPatch={handleLoadPatch}
+      />
+    )
+  }
+
+  function toggleDiffPanel(panel: DiffPanelKey) {
+    setDiffPanelVisibility((current) => ({ ...current, [panel]: !current[panel] }))
+  }
+
+  function setAllDiffPanels(nextVisible: boolean) {
+    setDiffPanelVisibility({
+      raw: nextVisible,
+      ai: nextVisible,
+      summary: nextVisible,
+    })
+  }
+
   return (
-    <div className="h-full min-h-0 border-l border-border bg-background md:min-w-[370px]">
+    <div className="h-full min-h-0 border-l border-border bg-background" style={{ minWidth: viewMode === "changes" && visiblePanelCount > 1 ? `${visiblePanelCount * 320}px` : "370px" }}>
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-border pl-2.5 pr-2 py-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1747,7 +1860,7 @@ function RightSidebarImpl({
                     />
                   </div>
                 </div>
-                {viewMode === "changes" ? (
+                {showInlineDiffControls ? (
                   <div className="flex items-center gap-1">
                     <IconButton
                       label="Unified diff"
@@ -1775,7 +1888,7 @@ function RightSidebarImpl({
               </div>
             </div>
           </div>
-          <div ref={scrollContainerRef} className="h-full overflow-y-auto [scrollbar-gutter:stable]">
+          <div ref={scrollContainerRef} className="h-full overflow-auto [scrollbar-gutter:stable]">
             {diffs.status === "no_repo" ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
                 <div className="flex max-w-[280px] flex-col items-center gap-3">
@@ -1800,39 +1913,148 @@ function RightSidebarImpl({
                 <p className="text-sm text-muted-foreground">No file changes.</p>
               </div>
             ) : (
-              <div className="space-y-1.5 p-1.5 pb-10">
-                {diffs.files.map((file) => {
-                  const isCollapsed = collapsedPaths[file.path] ?? true
-                  const isChecked = checkedPaths[file.path] ?? true
+              <div className="p-1.5 pb-10">
+                <div className="sticky top-1.5 z-20 mb-2 rounded-xl border border-border bg-background/90 p-2 backdrop-blur">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { value: "raw", label: "Raw Diff" },
+                        { value: "ai", label: "AI Order" },
+                        { value: "summary", label: "Summary" },
+                      ].map((panel) => {
+                        const panelKey = panel.value as DiffPanelKey
+                        const visible = diffPanelVisibility[panelKey]
+                        return (
+                          <button
+                            key={panel.value}
+                            type="button"
+                            onClick={() => toggleDiffPanel(panelKey)}
+                            className={cn(
+                              "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                              visible
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                            )}
+                          >
+                            {visible ? `Hide ${panel.label}` : `Show ${panel.label}`}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAllDiffPanels(visiblePanelCount !== 3)}
+                      className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      {visiblePanelCount === 3 ? "Hide all" : "Show all"}
+                    </button>
+                  </div>
+                </div>
 
-                  return (
-                    <DiffFileCard
-                      key={file.path}
-                      file={file}
-                      rootRef={scrollContainerRef}
-                      projectId={projectId}
-                      isCollapsed={isCollapsed}
-                      isChecked={isChecked}
-                      editorLabel={editorLabel}
-                      diffRenderMode={diffRenderMode}
-                      wrapLines={wrapLines}
-                      onToggleCollapsed={() => {
-                        if (!projectId) return
-                        toggleCollapsedPath(projectId, file.path)
-                      }}
-                      onToggleChecked={() => {
-                        if (!projectId) return
-                        setCheckedPath(projectId, file.path, !isChecked)
-                      }}
-                      fileActions={fileActions}
-                      patch={patchesByPath[file.path]}
-                      patchError={patchErrorsByPath[file.path]}
-                      isPatchLoading={Boolean(loadingPatchPaths[file.path])}
-                      onLoadPatch={handleLoadPatch}
-                    />
-                  )
-                })}
+                {visiblePanelCount === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                    All diff views are collapsed.
+                  </div>
+                ) : (
+                  <div className="pb-2">
+                    <div
+                      className="flex items-start gap-3"
+                      style={{ minWidth: visiblePanelCount > 1 ? `${visiblePanelCount * 300}px` : undefined }}
+                    >
+                      {diffPanelVisibility.raw ? (
+                        <section className="min-w-[300px] flex-1 rounded-xl border border-border bg-background">
+                          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                            <div>
+                              <div className="text-sm font-medium text-foreground">Raw Diff</div>
+                              <div className="text-[11px] text-muted-foreground">Traditional file-by-file view</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleDiffPanel("raw")}
+                              className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                            >
+                              Collapse
+                            </button>
+                          </div>
+                          <div className="space-y-1.5 p-2">
+                            {diffs.files.map((file) => renderDiffFile(file))}
+                          </div>
+                        </section>
+                      ) : null}
 
+                      {diffPanelVisibility.ai ? (
+                        <section className="min-w-[300px] flex-1 rounded-xl border border-border bg-background">
+                          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                            <div>
+                              <div className="text-sm font-medium text-foreground">AI Order</div>
+                              <div className="text-[11px] text-muted-foreground">Prototype reordered story of the diff</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleDiffPanel("ai")}
+                              className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                            >
+                              Collapse
+                            </button>
+                          </div>
+                          <div className="space-y-1.5 p-2">
+                            {prototypeAiOrderedDiff.map((entry) => (
+                              <div key={entry.file.path} className="space-y-1.5">
+                                <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                                        {entry.orderLabel}
+                                      </div>
+                                      <div className="mt-1 text-sm text-foreground">{entry.summary}</div>
+                                    </div>
+                                    <div className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                                      LLM
+                                    </div>
+                                  </div>
+                                </div>
+                                {renderDiffFile(entry.file)}
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {diffPanelVisibility.summary ? (
+                        <section className="min-w-[300px] flex-1 rounded-xl border border-border bg-background">
+                          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                            <div>
+                              <div className="text-sm font-medium text-foreground">Summary</div>
+                              <div className="text-[11px] text-muted-foreground">One-line natural language descriptions</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleDiffPanel("summary")}
+                              className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                            >
+                              Collapse
+                            </button>
+                          </div>
+                          <div className="space-y-2 p-2">
+                            {prototypeAiOrderedDiff.map((entry) => (
+                              <div key={entry.file.path} className="rounded-lg border border-border bg-background px-3 py-3">
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-0.5 shrink-0 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-foreground">
+                                    {entry.orderLabel}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-sm text-foreground">{entry.summary}</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">{entry.file.path}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
                 {viewMode === "changes" ? (
                   <div className="pointer-events-none sticky inset-x-0 bottom-11 py-1 pb-6 z-30 overflow-y-auto">
                   <div className="absolute inset-x-0 bottom-0 top-0 bg-gradient-to-t from-background to-transparent" />

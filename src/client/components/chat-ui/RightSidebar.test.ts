@@ -106,10 +106,64 @@ describe("RightSidebar", () => {
     ))
 
     expect(markup).toContain("src/app.ts")
+    expect(markup).toContain("Raw Diff")
+    expect(markup).toContain("AI Order")
+    expect(markup).toContain("Summary")
+    expect(markup).toContain("Hide all")
+    expect(markup).toContain("Updates app.ts to reshape existing behavior (+1/-1).")
+    expect(markup).toContain("flex items-start gap-3")
     expect(markup).toContain("Open branch switcher")
     expect(markup).toContain("Pull")
     expect(markup).toContain("3")
     expect(markup).not.toContain("Publish Branch")
+  })
+
+  test("builds deterministic fake AI ordering with one-line summaries", async () => {
+    const rightSidebarModule = await import("./RightSidebar") as Record<string, unknown>
+    const buildPrototypeAiOrderedDiff = rightSidebarModule.buildPrototypeAiOrderedDiff
+
+    expect(typeof buildPrototypeAiOrderedDiff).toBe("function")
+    if (typeof buildPrototypeAiOrderedDiff !== "function") {
+      return
+    }
+
+    const input = [
+      {
+        path: "src/app.ts",
+        changeType: "modified",
+        isUntracked: false,
+        additions: 12,
+        deletions: 4,
+        patchDigest: "digest-app",
+      },
+      {
+        path: "README.md",
+        changeType: "added",
+        isUntracked: true,
+        additions: 20,
+        deletions: 0,
+        patchDigest: "digest-readme",
+      },
+      {
+        path: "src/utils/math.ts",
+        changeType: "deleted",
+        isUntracked: false,
+        additions: 0,
+        deletions: 8,
+        patchDigest: "digest-math",
+      },
+    ]
+
+    const ordered = buildPrototypeAiOrderedDiff(input) as Array<{
+      file: { path: string }
+      summary: string
+      orderLabel: string
+    }>
+
+    expect(ordered).toHaveLength(3)
+    expect(ordered.map((entry) => entry.file.path)).not.toEqual(input.map((entry) => entry.path))
+    expect(ordered.every((entry) => entry.summary.length > 0)).toBe(true)
+    expect(ordered[0]?.orderLabel).toBe("Step 1")
   })
 
   test("renders the branch switcher affordance", () => {
