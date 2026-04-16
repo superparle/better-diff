@@ -48,4 +48,12 @@ i like boxes hiding away detail from me
 ## dev flow
 - we used codex for the most part obvs. 
 - we primarily worked on top of this ui : https://github.com/jakemor/kanna which works with codex app server part of codex cli installed locally.
+- here is a dummy we built to test if the diff viewer works : https://github.com/AlferdMurray/yt-spotify-migrations
 - what we implemented is extending the diff viewer to have the the phases, the llm part of it is all via the same app server.
+
+### how to run this
+1. have bun
+2. do bun install
+3. bun install
+4. bun run dev
+5. load up your project run something and check the diff out
